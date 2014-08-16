@@ -239,6 +239,7 @@ final public class WalletActivity extends AbstractWalletActivity implements
         }
     }
 
+<<<<<<< Updated upstream
 
 
 
@@ -283,6 +284,36 @@ final public class WalletActivity extends AbstractWalletActivity implements
                     return walletActivity.getString(R.string.wallet_title_info);
             }
         }
+    
+    public static class FirstStartFragment extends Fragment {
+
+        private static final String ARG_SECTION_NUMBER = "section_number";
+
+        public static FirstStartFragment newInstance(int sectionNumber) {
+            FirstStartFragment fragment = new FirstStartFragment();
+            Bundle args = new Bundle();
+            args.putInt(ARG_SECTION_NUMBER, sectionNumber);
+            fragment.setArguments(args);
+            return fragment;
+        }
+
+        public FirstStartFragment() {
+        }
+
+        @Override
+        public View onCreateView(LayoutInflater inflater, ViewGroup container,
+                                 Bundle savedInstanceState) {
+            View rootView = inflater.inflate(R.layout.fragment_first_start, container, false);
+            return rootView;
+        }
+
+        @Override
+        public void onAttach(Activity activity) {
+            super.onAttach(activity);
+            ((WalletActivity) activity).onSectionAttached(
+                    getArguments().getInt(ARG_SECTION_NUMBER));
+        }
+
     }
 
 }

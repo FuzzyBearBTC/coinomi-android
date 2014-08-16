@@ -25,4 +25,6 @@
     <color name="scan_result_view">#b0000000</color>
     <color name="scan_result_dots">#c099cc00</color>
 
+    <color name="orangeBar">#ffff8900</color>
+    <color name="orangeText">#ffc36200</color>
 </resources>

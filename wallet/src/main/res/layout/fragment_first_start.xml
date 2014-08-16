@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<RelativeLayout
+    android:layout_width="fill_parent"
+    android:layout_height="fill_parent"
+    xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <Button
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Create Wallet"
+        android:id="@+id/walletCreate"
+        android:height="50dp"
+        android:width="150dp"
+        android:layout_centerVertical="true"
+        android:layout_alignLeft="@+id/walletRestore"
+        android:layout_alignStart="@+id/walletRestore" />
+
+    <Button
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Restore Wallet"
+        android:id="@+id/walletRestore"
+        android:layout_below="@+id/walletCreate"
+        android:layout_centerHorizontal="true"
+        android:layout_marginTop="30dp"
+        android:width="150dp"
+        android:height="50dp" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textAppearance="?android:attr/textAppearanceLarge"
+        android:text="Welcome to Coinomi Wallet"
+        android:id="@+id/textView"
+        android:layout_marginBottom="30dp"
+        android:layout_above="@+id/walletCreate"
+        android:layout_centerHorizontal="true"
+        android:textColor="@color/orangeBar"/>
+
+    <ImageView
+        android:layout_width="128dp"
+        android:layout_height="128dp"
+        android:id="@+id/imageView"
+        android:layout_marginBottom="15dp"
+        android:src="@drawable/icon"
+        android:layout_above="@+id/textView"
+        android:layout_centerHorizontal="true"/>
+
+</RelativeLayout>
