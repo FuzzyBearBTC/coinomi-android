@@ -239,10 +239,6 @@ final public class WalletActivity extends AbstractWalletActivity implements
         }
     }
 
-<<<<<<< Updated upstream
-
-
-
     private static class AppSectionsPagerAdapter extends FragmentPagerAdapter {
 
         private final CoinType type;
