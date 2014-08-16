@@ -93,6 +93,8 @@ final public class WalletActivity extends AbstractWalletActivity implements
             // First time, run this.
             System.out.println("Testing... Testing... Testing...");
 
+            setContentView(R.layout.fragment_first_start);
+
             //Set the boolean to false to make sure this code never runs again.
             settings.edit().putBoolean("firstLaunch", false).commit();
         }
@@ -239,10 +241,6 @@ final public class WalletActivity extends AbstractWalletActivity implements
         }
     }
 
-<<<<<<< Updated upstream
-
-
-
     private static class AppSectionsPagerAdapter extends FragmentPagerAdapter {
 
         private final CoinType type;
@@ -284,6 +282,8 @@ final public class WalletActivity extends AbstractWalletActivity implements
                     return walletActivity.getString(R.string.wallet_title_info);
             }
         }
+
+    }
     
     public static class FirstStartFragment extends Fragment {
 
@@ -315,5 +315,4 @@ final public class WalletActivity extends AbstractWalletActivity implements
         }
 
     }
-
 }

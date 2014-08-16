@@ -17,6 +17,7 @@
     <color name="bg_list_selected">#40808090</color>
     <color name="bg_dialog_title">#ffb8b8b0</color>
     <color name="bg_tabs">#ff33b5e5</color>
+    <color name="bg_actionbar">#ff33b5e5</color>
 
     <!-- scanner -->
     <color name="scan_mask">#60000000</color>
@@ -24,7 +25,4 @@
     <color name="scan_dot">#ff6600</color>
     <color name="scan_result_view">#b0000000</color>
     <color name="scan_result_dots">#c099cc00</color>
-
-    <color name="orangeBar">#ffff8900</color>
-    <color name="orangeText">#ffc36200</color>
 </resources>

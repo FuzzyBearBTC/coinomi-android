@@ -9,9 +9,9 @@
     </style>
 
     <style name="CustomActionBar" parent="@style/Widget.AppCompat.ActionBar">
-        <item name="android:background">@color/orangeBar</item>
+        <item name="android:background">@color/bg_actionbar</item>
 
-        <item name="background">@color/orangeBar</item>
+        <item name="background">@color/bg_actionbar</item>
     </style>
 
     <style name="Amount" parent="@android:style/TextAppearance">
