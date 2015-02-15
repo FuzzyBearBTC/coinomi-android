@@ -111,8 +111,6 @@ public class SetPasswordFragment extends Fragment {
         // Seed protect option
         final TextView seedProtectInfo = (TextView) view.findViewById(R.id.seed_protect_info);
         seedProtectInfo.setVisibility(View.GONE);
-        final View password2Layout = view.findViewById(R.id.password2_layout);
-        password2Layout.setVisibility(View.GONE);
 
         final CheckBox seedProtect = (CheckBox) view.findViewById(R.id.seed_protect);
         seedProtect.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
@@ -121,16 +119,14 @@ public class SetPasswordFragment extends Fragment {
                 isSeedProtected = isChecked;
                 if (isChecked) {
                     seedProtectInfo.setVisibility(View.VISIBLE);
-                    password2Layout.setVisibility(View.VISIBLE);
                 } else {
                     seedProtectInfo.setVisibility(View.GONE);
-                    password2Layout.setVisibility(View.GONE);
                 }
             }
         });
 
         // Next button
-        Button finishButton = (Button) view.findViewById(R.id.button_finish);
+        Button finishButton = (Button) view.findViewById(R.id.button_next);
         finishButton.setOnClickListener(getOnFinishListener());
         finishButton.setImeOptions(EditorInfo.IME_ACTION_DONE);
 
@@ -165,10 +161,6 @@ public class SetPasswordFragment extends Fragment {
     }
 
     private void checkPasswordsMatch() {
-        if (!isSeedProtected) {
-            isPasswordsMatch = true;
-            return;
-        }
         String pass1 = password1.getText().toString();
         String pass2 = password2.getText().toString();
         isPasswordsMatch = pass1.equals(pass2);

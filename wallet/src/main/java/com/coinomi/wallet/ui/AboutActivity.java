@@ -12,7 +12,7 @@ import android.widget.TextView;
 
 import com.coinomi.wallet.R;
 
-public class AboutActivity extends ActionBarActivity {
+public class AboutActivity extends AbstractWalletActionBarActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -20,12 +20,13 @@ public class AboutActivity extends ActionBarActivity {
 
         setContentView(R.layout.activity_about);
 
+        getSupportActionBar().setDisplayHomeAsUpEnabled(true);
+        getSupportActionBar().setDisplayShowHomeEnabled(false);
+
         TextView version = (TextView) findViewById(R.id.about_version);
-        try {
-            String versionName = getPackageManager()
-                    .getPackageInfo(getPackageName(), 0).versionName;
-            version.setText(versionName);
-        } catch (PackageManager.NameNotFoundException e) {
+        if (getWalletApplication().packageInfo() != null) {
+            version.setText(getWalletApplication().packageInfo().versionName);
+        } else {
             version.setVisibility(View.INVISIBLE);
         }
     }

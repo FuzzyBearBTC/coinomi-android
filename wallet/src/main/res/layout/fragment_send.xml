@@ -34,7 +34,7 @@
                     android:textColor="@color/gray_54_sec_text_icons" />
 
                 <!-- TODO make android:imeOptions="actionNext" work -->
-                <EditText
+                <AutoCompleteTextView
                     android:id="@+id/send_to_address"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -43,8 +43,24 @@
                     android:layout_below="@+id/pay_to_label"
                     android:layout_toLeftOf="@id/scan_qr_code"
                     android:layout_toStartOf="@id/scan_qr_code"
-                    android:imeOptions="actionNext"
+                    android:imeOptions="actionNext|flagNoExtractUi"
+                    android:completionThreshold="1"
+                    android:hint="@string/send_coins_fragment_receiving_address_tip"
+                    android:singleLine="true"
                     android:inputType="textMultiLine|textNoSuggestions" />
+
+                <!--<AutoCompleteTextView-->
+                    <!--android:id="@+id/send_coins_receiving_address"-->
+                    <!--android:layout_width="match_parent"-->
+                    <!--android:layout_height="wrap_content"-->
+                    <!--android:layout_marginLeft="@dimen/list_entry_padding_horizontal"-->
+                    <!--android:layout_marginRight="@dimen/list_entry_padding_horizontal"-->
+                    <!--android:completionThreshold="1"-->
+                    <!--android:hint="@string/send_coins_fragment_receiving_address_hint"-->
+                    <!--android:imeOptions="flagNoExtractUi"-->
+                    <!--android:singleLine="true"-->
+                    <!--android:textColor="#000"-->
+                    <!--android:textSize="@dimen/font_size_normal" />-->
 
                 <TextView
                     android:id="@+id/address_error_message"
@@ -56,7 +72,7 @@
                     android:layout_below="@+id/send_to_address"
                     android:text="@string/address_error" />
 
-                <com.coinomi.wallet.ui.widget.QrCodeButton
+                <ImageButton
                     android:id="@+id/scan_qr_code"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
@@ -77,26 +93,27 @@
                     android:text="@string/amount_to_send_label"
                     android:textColor="@color/gray_54_sec_text_icons" />
 
-                <EditText
-                    android:id="@+id/send_amount"
-                    android:layout_width="wrap_content"
+                <LinearLayout
+                    android:id="@+id/amounts"
+                    android:orientation="horizontal"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_alignParentLeft="true"
-                    android:layout_alignParentStart="true"
-                    android:layout_below="@+id/amount_to_send_label"
-                    android:imeOptions="actionDone"
-                    android:inputType="numberDecimal|textNoSuggestions"
-                    android:minEms="6" />
+                    android:baselineAligned="false"
+                    android:layout_below="@+id/amount_to_send_label">
 
-                <TextView
-                    android:id="@+id/symbol"
-                    style="@style/AmountSymbol"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_alignEnd="@+id/send_amount"
-                    android:layout_alignRight="@+id/send_amount"
-                    android:layout_below="@+id/send_amount"
-                    tools:text="SYMBOL" />
+                    <com.coinomi.wallet.ui.widget.AmountEditView
+                        android:id="@+id/send_coin_amount"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="0.5" />
+
+                    <com.coinomi.wallet.ui.widget.AmountEditView
+                        android:id="@+id/send_local_amount"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="0.5" />
+
+                </LinearLayout>
 
                 <TextView
                     android:id="@+id/amount_error_message"
@@ -105,7 +122,7 @@
                     android:layout_height="wrap_content"
                     android:layout_alignParentLeft="true"
                     android:layout_alignParentStart="true"
-                    android:layout_below="@+id/symbol"
+                    android:layout_below="@+id/amounts"
                     tools:text="@string/amount_error" />
 
                 <TextView

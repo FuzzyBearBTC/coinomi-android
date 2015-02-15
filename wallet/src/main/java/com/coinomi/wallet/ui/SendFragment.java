@@ -1,10 +1,19 @@
 package com.coinomi.wallet.ui;
 
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
+import android.database.Cursor;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.Message;
 import android.support.v4.app.Fragment;
+import android.support.v4.app.LoaderManager;
+import android.support.v4.app.LoaderManager.LoaderCallbacks;
+import android.support.v4.content.CursorLoader;
+import android.support.v4.content.Loader;
+import android.support.v4.widget.CursorAdapter;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.LayoutInflater;
@@ -13,8 +22,10 @@ import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.AutoCompleteTextView;
 import android.widget.Button;
-import android.widget.EditText;
+import android.widget.FilterQueryProvider;
+import android.widget.ImageButton;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -24,9 +35,14 @@ import com.coinomi.core.uri.CoinURIParseException;
 import com.coinomi.core.util.GenericUtils;
 import com.coinomi.core.wallet.WalletPocket;
 import com.coinomi.core.wallet.exceptions.NoSuchPocketException;
+import com.coinomi.wallet.AddressBookProvider;
+import com.coinomi.wallet.Configuration;
 import com.coinomi.wallet.Constants;
+import com.coinomi.wallet.ExchangeRatesProvider;
+import com.coinomi.wallet.ExchangeRatesProvider.ExchangeRate;
 import com.coinomi.wallet.R;
-import com.coinomi.wallet.ui.widget.QrCodeButton;
+import com.coinomi.wallet.ui.widget.AmountEditView;
+import com.coinomi.wallet.util.ThrottlingWalletChangeListener;
 
 import org.bitcoinj.core.Address;
 import org.bitcoinj.core.AddressFormatException;
@@ -34,6 +50,7 @@ import org.bitcoinj.core.Coin;
 import org.bitcoinj.core.InsufficientMoneyException;
 import org.bitcoinj.core.Wallet;
 import org.bitcoinj.crypto.KeyCrypterException;
+import org.bitcoinj.utils.Threading;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -44,7 +61,10 @@ import javax.annotation.Nullable;
 import static com.coinomi.core.Preconditions.checkNotNull;
 
 /**
- *  Fragment that prepares a transaction
+ * Fragment that prepares a transaction
+ *
+ * @author Andreas Schildbach
+ * @author John L. Jegutanis
  */
 public class SendFragment extends Fragment {
     private static final Logger log = LoggerFactory.getLogger(SendFragment.class);
@@ -54,30 +74,52 @@ public class SendFragment extends Fragment {
     private static final int REQUEST_CODE_SCAN = 0;
     private static final int SIGN_TRANSACTION = 1;
 
-    private CoinType coinType;
-    private Handler handler = new Handler();
-    private EditText sendToAddressView;
+    private static final int UPDATE_EXCHANGE_RATE = 0;
+    private static final int UPDATE_WALLET_CHANGE = 1;
+
+    // Loader IDs
+    private static final int ID_RATE_LOADER = 0;
+    private static final int ID_RECEIVING_ADDRESS_LOADER = 1;
+
+    private CoinType type;
+    @Nullable
+    private Coin lastBalance; // TODO setup wallet watcher for the latest balance
+    private AutoCompleteTextView sendToAddressView;
     private TextView addressError;
-    private EditText sendAmountView;
+    private CurrencyCalculatorLink amountCalculatorLink;
     private TextView amountError;
     private TextView amountWarning;
-    private QrCodeButton scanQrCodeButton;
+    private ImageButton scanQrCodeButton;
     private Button sendConfirmButton;
 
     private State state = State.INPUT;
     private Address address;
     private Coin sendAmount;
-    @Nullable private WalletActivity mListener;
-    @Nullable private WalletPocket pocket;
+    @Nullable
+    private WalletActivity activity;
+    @Nullable
+    private WalletPocket pocket;
+    private Configuration config;
     private NavigationDrawerFragment mNavigationDrawerFragment;
+    private LoaderManager loaderManager;
+    private ReceivingAddressViewAdapter sendToAddressViewAdapter;
 
+    Handler handler = new Handler() {
+        @Override
+        public void handleMessage(Message msg) {
+            switch (msg.what) {
+                case UPDATE_EXCHANGE_RATE:
+                    onExchangeRateUpdate((org.bitcoinj.utils.ExchangeRate) msg.obj);
+                    break;
+                case UPDATE_WALLET_CHANGE:
+                    onWalletUpdate();
+            }
+        }
+    };
 
     private enum State {
         INPUT, PREPARATION, SENDING, SENT, FAILED
     }
-
-    private final SendAmountListener sendAmountListener = new SendAmountListener();
-    private final ReceivingAddressListener receivingAddressListener = new ReceivingAddressListener();
 
     /**
      * Use this factory method to create a new instance of
@@ -102,14 +144,21 @@ public class SendFragment extends Fragment {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         if (getArguments() != null) {
-            coinType = (CoinType) checkNotNull(getArguments().getSerializable(COIN_TYPE));
+            type = (CoinType) checkNotNull(getArguments().getSerializable(COIN_TYPE));
         }
-        if (mListener != null) {
-            pocket = mListener.getWalletApplication().getWalletPocket(coinType);
+        if (activity != null) {
+            pocket = activity.getWalletApplication().getWalletPocket(type);
         }
+        updateBalance();
         setHasOptionsMenu(true);
         mNavigationDrawerFragment = (NavigationDrawerFragment)
                 getFragmentManager().findFragmentById(R.id.navigation_drawer);
+    }
+
+    private void updateBalance() {
+        if (pocket != null) {
+            lastBalance = pocket.getBalance(false);
+        }
     }
 
     @Override
@@ -118,13 +167,21 @@ public class SendFragment extends Fragment {
         // Inflate the layout for this fragment
         View view = inflater.inflate(R.layout.fragment_send, container, false);
 
-        sendToAddressView = (EditText) view.findViewById(R.id.send_to_address);
+        sendToAddressView = (AutoCompleteTextView) view.findViewById(R.id.send_to_address);
+        sendToAddressViewAdapter = new ReceivingAddressViewAdapter(activity);
+        sendToAddressView.setAdapter(sendToAddressViewAdapter);
         sendToAddressView.setOnFocusChangeListener(receivingAddressListener);
         sendToAddressView.addTextChangedListener(receivingAddressListener);
 
-        sendAmountView = (EditText) view.findViewById(R.id.send_amount);
-        sendAmountView.setOnFocusChangeListener(sendAmountListener);
-        sendAmountView.addTextChangedListener(sendAmountListener);
+        AmountEditView sendCoinAmountView = (AmountEditView) view.findViewById(R.id.send_coin_amount);
+        sendCoinAmountView.setCoinType(type);
+        sendCoinAmountView.setFormat(type.getMonetaryFormat());
+
+        AmountEditView sendLocalAmountView = (AmountEditView) view.findViewById(R.id.send_local_amount);
+        sendLocalAmountView.setFormat(Constants.LOCAL_CURRENCY_FORMAT);
+
+        amountCalculatorLink = new CurrencyCalculatorLink(sendCoinAmountView, sendLocalAmountView);
+        amountCalculatorLink.setExchangeDirection(config.getLastExchangeDirection());
 
         addressError = (TextView) view.findViewById(R.id.address_error_message);
         addressError.setVisibility(View.GONE);
@@ -133,7 +190,7 @@ public class SendFragment extends Fragment {
         amountWarning = (TextView) view.findViewById(R.id.amount_warning_message);
         amountWarning.setVisibility(View.GONE);
 
-        scanQrCodeButton = (QrCodeButton) view.findViewById(R.id.scan_qr_code);
+        scanQrCodeButton = (ImageButton) view.findViewById(R.id.scan_qr_code);
         scanQrCodeButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -154,9 +211,43 @@ public class SendFragment extends Fragment {
             }
         });
 
-        ((TextView)view.findViewById(R.id.symbol)).setText(coinType.getSymbol());
-
         return view;
+    }
+
+    @Override
+    public void onDestroyView() {
+        super.onDestroyView();
+
+        config.setLastExchangeDirection(amountCalculatorLink.getExchangeDirection());
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+
+        amountCalculatorLink.setListener(amountsListener);
+
+        loaderManager.initLoader(ID_RATE_LOADER, null, rateLoaderCallbacks);
+        loaderManager.initLoader(ID_RECEIVING_ADDRESS_LOADER, null, receivingAddressLoaderCallbacks);
+
+        if (pocket != null)
+            pocket.addEventListener(transactionChangeListener, Threading.SAME_THREAD);
+        updateBalance();
+
+        updateView();
+    }
+
+    @Override
+    public void onPause() {
+        if (pocket != null) pocket.removeEventListener(transactionChangeListener);
+        transactionChangeListener.removeCallbacks();
+
+        loaderManager.destroyLoader(ID_RECEIVING_ADDRESS_LOADER);
+        loaderManager.destroyLoader(ID_RATE_LOADER);
+
+        amountCalculatorLink.setListener(null);
+
+        super.onPause();
     }
 
     private void handleScan() {
@@ -172,7 +263,7 @@ public class SendFragment extends Fragment {
         }
         state = State.PREPARATION;
         updateView();
-        if (mListener != null && mListener.getWalletApplication().getWallet() != null) {
+        if (activity != null && activity.getWalletApplication().getWallet() != null) {
             onMakeTransaction(address, sendAmount);
         }
         reset();
@@ -182,9 +273,9 @@ public class SendFragment extends Fragment {
         Intent intent = new Intent(getActivity(), SignTransactionActivity.class);
         try {
             if (pocket == null) {
-                throw new NoSuchPocketException("No pocket found for " + coinType.getName());
+                throw new NoSuchPocketException("No pocket found for " + type.getName());
             }
-            intent.putExtra(Constants.ARG_COIN_ID, coinType.getId());
+            intent.putExtra(Constants.ARG_COIN_ID, type.getId());
             intent.putExtra(Constants.ARG_SEND_TO_ADDRESS, toAddress.toString());
             intent.putExtra(Constants.ARG_SEND_AMOUNT, amount.getValue());
             startActivityForResult(intent, SIGN_TRANSACTION);
@@ -195,10 +286,13 @@ public class SendFragment extends Fragment {
 
     private void reset() {
         sendToAddressView.setText(null);
-        sendAmountView.setText(null);
+        amountCalculatorLink.setCoinAmount(null);
         address = null;
         sendAmount = null;
         state = State.INPUT;
+        addressError.setVisibility(View.GONE);
+        amountError.setVisibility(View.GONE);
+        amountWarning.setVisibility(View.GONE);
         updateView();
     }
 
@@ -209,7 +303,7 @@ public class SendFragment extends Fragment {
                 final String input = intent.getStringExtra(ScanActivity.INTENT_EXTRA_RESULT);
 
                 try {
-                    final CoinURI coinUri = new CoinURI(coinType, input);
+                    final CoinURI coinUri = new CoinURI(type, input);
 
                     Address address = coinUri.getAddress();
                     Coin amount = coinUri.getAmount();
@@ -226,8 +320,7 @@ public class SendFragment extends Fragment {
                 Exception error = (Exception) intent.getSerializableExtra(Constants.ARG_ERROR);
 
                 if (error == null) {
-                    // TODO check for transaction broadcast in wallet pocket
-                    Toast.makeText(getActivity(), R.string.sent_msg, Toast.LENGTH_LONG).show();
+                    Toast.makeText(getActivity(), R.string.sending_msg, Toast.LENGTH_SHORT).show();
                 } else {
                     if (error instanceof InsufficientMoneyException) {
                         Toast.makeText(getActivity(), R.string.amount_error_not_enough_money, Toast.LENGTH_LONG).show();
@@ -257,18 +350,13 @@ public class SendFragment extends Fragment {
         }
 
         // delay these actions until fragment is resumed
-        handler.post(new Runnable()
-        {
+        handler.post(new Runnable() {
             @Override
             public void run() {
-                SendFragment.this.address = address;
                 sendToAddressView.setText(address.toString());
-                if (isAmountValid(amount)) {
-                    sendAmountView.setText(GenericUtils.formatValue(coinType, amount));
-                    sendAmount = amount;
-                }
+                if (amount != null) amountCalculatorLink.setCoinAmount(amount);
+                validateEverything();
                 requestFocusFirst();
-                updateView();
             }
         });
     }
@@ -293,11 +381,10 @@ public class SendFragment extends Fragment {
     private boolean isAmountValid(Coin amount) {
         boolean isValid = amount != null
                 && amount.isPositive()
-                && amount.compareTo(coinType.getMinNonDust()) >= 0;
-        if (isValid && pocket != null) {
+                && amount.compareTo(type.getMinNonDust()) >= 0;
+        if (isValid && lastBalance != null) {
             // Check if we have the amount
-            // FIXME optimize, pocket.getBalance() is a bit heavy but always up-to-date.
-            isValid = amount.compareTo(pocket.getBalance(false)) <= 0;
+            isValid = amount.compareTo(lastBalance) <= 0;
         }
         return isValid;
     }
@@ -310,7 +397,7 @@ public class SendFragment extends Fragment {
         if (!isOutputsValid()) {
             sendToAddressView.requestFocus();
         } else if (!isAmountValid()) {
-            sendAmountView.requestFocus();
+            amountCalculatorLink.requestFocus();
             // FIXME causes problems in older Androids
 //            Keyboard.focusAndShowKeyboard(sendAmountView, getActivity());
         } else if (everythingValid()) {
@@ -320,67 +407,68 @@ public class SendFragment extends Fragment {
         }
     }
 
+    private void validateEverything() {
+        validateAddress();
+        validateAmount();
+    }
+
     private void validateAmount() {
         validateAmount(false);
     }
 
     private void validateAmount(boolean isTyping) {
-        final String amountStr = sendAmountView.getText().toString().trim();
-        Coin amountParsed = null;
-        try {
-            if (!amountStr.isEmpty()) {
-                amountParsed = GenericUtils.parseCoin(coinType, amountStr);
-                if (isAmountValid(amountParsed)) {
-                    sendAmount = amountParsed;
-                } else {
-                    throw new IllegalArgumentException("Amount " + amountStr + " is invalid");
-                }
-            } else {
-                sendAmount = null;
-            }
-            amountError.setVisibility(View.GONE);
+        Coin amountParsed = amountCalculatorLink.getAmount();
 
+        if (isAmountValid(amountParsed)) {
+            sendAmount = amountParsed;
+            amountError.setVisibility(View.GONE);
             // Show warning that fees apply when entered the full amount inside the pocket
-            // FIXME optimize, pocket.getBalance() is a bit heavy but always up-to-date.
-            if (pocket != null && sendAmount != null && sendAmount.compareTo(pocket.getBalance()) == 0) {
+            if (sendAmount != null && lastBalance != null && sendAmount.compareTo(lastBalance) == 0) {
                 amountWarning.setText(R.string.amount_warn_fees_apply);
                 amountWarning.setVisibility(View.VISIBLE);
             } else {
                 amountWarning.setVisibility(View.GONE);
             }
-        } catch (IllegalArgumentException e) {
+        } else {
             amountWarning.setVisibility(View.GONE);
-            if (!isTyping) {
-                log.info(e.getMessage());
+            // ignore printing errors for null and zero amounts
+            if (shouldShowErrors(isTyping, amountParsed)) {
                 sendAmount = null;
                 if (amountParsed == null) {
                     amountError.setText(R.string.amount_error);
                 } else if (amountParsed.isNegative()) {
                     amountError.setText(R.string.amount_error_negative);
-                } else if (amountParsed.compareTo(coinType.getMinNonDust()) < 0) {
-                    String minAmount = GenericUtils.formatValue(coinType, coinType.getMinNonDust());
+                } else if (amountParsed.compareTo(type.getMinNonDust()) < 0) {
+                    String minAmount = GenericUtils.formatCoinValue(type, type.getMinNonDust());
                     String message = getResources().getString(R.string.amount_error_too_small,
-                            minAmount, coinType.getSymbol());
+                            minAmount, type.getSymbol());
                     amountError.setText(message);
-                } else if (pocket != null && amountParsed.compareTo(pocket.getBalance()) > 0) {
+                } else if (lastBalance != null && amountParsed.compareTo(lastBalance) > 0) {
                     amountError.setText(R.string.amount_error_not_enough_money);
                 } else { // Should not happen, but show a generic error
                     amountError.setText(R.string.amount_error);
                 }
                 amountError.setVisibility(View.VISIBLE);
-            }
-        } catch (ArithmeticException e) {
-            amountWarning.setVisibility(View.GONE);
-            if (!isTyping) {
-                log.info(e.getMessage());
-                sendAmount = null;
-                String message = getResources().getString(R.string.amount_error_decimal_places,
-                        coinType.getUnitExponent());
-                amountError.setText(message);
-                amountError.setVisibility(View.VISIBLE);
+            } else {
+                amountError.setVisibility(View.GONE);
             }
         }
         updateView();
+    }
+
+    /**
+     * Show errors if the user is not typing and the input is not empty and the amount is zero.
+     * Exception is when the amount is lower than the available balance
+     */
+    private boolean shouldShowErrors(boolean isTyping, Coin amountParsed) {
+        if (amountParsed != null && lastBalance != null && amountParsed.compareTo(lastBalance) >= 0)
+            return true;
+
+        if (isTyping) return false;
+        if (amountCalculatorLink.isEmpty()) return false;
+        if (amountParsed != null && amountParsed.isZero()) return false;
+
+        return true;
     }
 
     private void validateAddress() {
@@ -401,14 +489,13 @@ public class SendFragment extends Fragment {
 
         try {
             if (!addressStr.isEmpty()) {
-                address = new Address(coinType, addressStr);
+                address = new Address(type, addressStr);
             } else {
                 // empty field should not raise error message
                 address = null;
             }
             addressError.setVisibility(View.GONE);
-        }
-        catch (final AddressFormatException x) {
+        } catch (final AddressFormatException x) {
             // could not decode address at all
             if (!isTyping) {
                 address = null;
@@ -421,14 +508,14 @@ public class SendFragment extends Fragment {
     }
 
     private void setAmountForEmptyWallet() {
-        if (state != State.INPUT || pocket == null) return;
+        updateBalance();
+        if (state != State.INPUT || pocket == null || lastBalance == null) return;
 
-        Coin availableBalance = pocket.getBalance(false);
-        if (availableBalance.isZero()) {
+        if (lastBalance.isZero()) {
             Toast.makeText(getActivity(), R.string.amount_error_not_enough_money,
                     Toast.LENGTH_LONG).show();
         } else {
-            sendAmountView.setText(GenericUtils.formatValue(coinType, availableBalance));
+            amountCalculatorLink.setCoinAmount(lastBalance);
             validateAmount();
         }
     }
@@ -459,7 +546,9 @@ public class SendFragment extends Fragment {
     public void onAttach(Activity activity) {
         super.onAttach(activity);
         try {
-            mListener = (WalletActivity) activity;
+            this.activity = (WalletActivity) activity;
+            this.config = ((WalletActivity) activity).getWalletApplication().getConfiguration();
+            this.loaderManager = getLoaderManager();
         } catch (ClassCastException e) {
             throw new ClassCastException(activity.toString()
                     + " must implement " + WalletActivity.class);
@@ -469,31 +558,20 @@ public class SendFragment extends Fragment {
     @Override
     public void onDetach() {
         super.onDetach();
-        mListener = null;
+        activity = null;
     }
 
     private abstract class EditViewListener implements View.OnFocusChangeListener, TextWatcher {
         @Override
-        public void beforeTextChanged(final CharSequence s, final int start, final int count, final int after) { }
-        @Override
-        public void onTextChanged(final CharSequence s, final int start, final int before, final int count) { }
-    }
-
-    private final class SendAmountListener extends EditViewListener {
-        @Override
-        public void onFocusChange(final View v, final boolean hasFocus) {
-            if (!hasFocus) {
-                validateAmount();
-            }
+        public void beforeTextChanged(final CharSequence s, final int start, final int count, final int after) {
         }
 
         @Override
-        public void afterTextChanged(final Editable s) {
-            validateAmount(true);
+        public void onTextChanged(final CharSequence s, final int start, final int before, final int count) {
         }
     }
 
-    private final class ReceivingAddressListener extends EditViewListener {
+    EditViewListener receivingAddressListener = new EditViewListener() {
         @Override
         public void onFocusChange(final View v, final boolean hasFocus) {
             if (!hasFocus) {
@@ -505,6 +583,117 @@ public class SendFragment extends Fragment {
         public void afterTextChanged(final Editable s) {
             validateAddress(true);
         }
+    };
 
+    private final AmountEditView.Listener amountsListener = new AmountEditView.Listener() {
+        @Override
+        public void changed() {
+            validateAmount(true);
+        }
+
+        @Override
+        public void focusChanged(final boolean hasFocus) {
+            if (!hasFocus) {
+                validateAmount();
+            }
+        }
+    };
+
+    private final LoaderCallbacks<Cursor> rateLoaderCallbacks = new LoaderManager.LoaderCallbacks<Cursor>() {
+        @Override
+        public Loader<Cursor> onCreateLoader(final int id, final Bundle args) {
+            String localSymbol = config.getExchangeCurrencyCode();
+            String coinSymbol = type.getSymbol();
+            return new ExchangeRateLoader(getActivity(), config, localSymbol, coinSymbol);
+        }
+
+        @Override
+        public void onLoadFinished(final Loader<Cursor> loader, final Cursor data) {
+            if (data != null && data.getCount() > 0) {
+                data.moveToFirst();
+                final ExchangeRate exchangeRate = ExchangeRatesProvider.getExchangeRate(data);
+                handler.sendMessage(handler.obtainMessage(UPDATE_EXCHANGE_RATE, exchangeRate.rate));
+            }
+        }
+
+        @Override
+        public void onLoaderReset(final Loader<Cursor> loader) { }
+    };
+
+    private void onExchangeRateUpdate(org.bitcoinj.utils.ExchangeRate rate) {
+        if (state == State.INPUT) {
+            amountCalculatorLink.setExchangeRate(rate);
+        }
+    }
+
+    private void onWalletUpdate() {
+        updateBalance();
+        validateAmount();
+    }
+
+    private final ThrottlingWalletChangeListener transactionChangeListener = new ThrottlingWalletChangeListener() {
+        @Override
+        public void onThrottledWalletChanged() {
+            handler.sendMessage(handler.obtainMessage(UPDATE_WALLET_CHANGE));
+        }
+    };
+
+    private final LoaderCallbacks<Cursor> receivingAddressLoaderCallbacks = new LoaderManager.LoaderCallbacks<Cursor>() {
+        @Override
+        public Loader<Cursor> onCreateLoader(final int id, final Bundle args) {
+            final String constraint = args != null ? args.getString("constraint") : null;
+            Uri uri = AddressBookProvider.contentUri(activity.getPackageName(), type);
+            return new CursorLoader(activity, uri, null, AddressBookProvider.SELECTION_QUERY,
+                    new String[]{constraint != null ? constraint : ""}, null);
+        }
+
+        @Override
+        public void onLoadFinished(final Loader<Cursor> cursor, final Cursor data) {
+            sendToAddressViewAdapter.swapCursor(data);
+        }
+
+        @Override
+        public void onLoaderReset(final Loader<Cursor> cursor) {
+            sendToAddressViewAdapter.swapCursor(null);
+        }
+    };
+
+    private final class ReceivingAddressViewAdapter extends CursorAdapter implements FilterQueryProvider {
+        public ReceivingAddressViewAdapter(final Context context) {
+            super(context, null, false);
+            setFilterQueryProvider(this);
+        }
+
+        @Override
+        public View newView(final Context context, final Cursor cursor, final ViewGroup parent) {
+            final LayoutInflater inflater = LayoutInflater.from(context);
+            return inflater.inflate(R.layout.address_book_row, parent, false);
+        }
+
+        @Override
+        public void bindView(final View view, final Context context, final Cursor cursor) {
+            final String label = cursor.getString(cursor.getColumnIndexOrThrow(AddressBookProvider.KEY_LABEL));
+            final String address = cursor.getString(cursor.getColumnIndexOrThrow(AddressBookProvider.KEY_ADDRESS));
+
+            final ViewGroup viewGroup = (ViewGroup) view;
+            final TextView labelView = (TextView) viewGroup.findViewById(R.id.address_book_row_label);
+            labelView.setText(label);
+            final TextView addressView = (TextView) viewGroup.findViewById(R.id.address_book_row_address);
+            addressView.setText(GenericUtils.addressSplitToGroupsMultiline(address));
+        }
+
+        @Override
+        public CharSequence convertToString(final Cursor cursor) {
+            return cursor.getString(cursor.getColumnIndexOrThrow(AddressBookProvider.KEY_ADDRESS));
+        }
+
+        @Override
+        public Cursor runQuery(final CharSequence constraint) {
+            final Bundle args = new Bundle();
+            if (constraint != null)
+                args.putString("constraint", constraint.toString());
+            loaderManager.restartLoader(ID_RECEIVING_ADDRESS_LOADER, args, receivingAddressLoaderCallbacks);
+            return getCursor();
+        }
     }
 }

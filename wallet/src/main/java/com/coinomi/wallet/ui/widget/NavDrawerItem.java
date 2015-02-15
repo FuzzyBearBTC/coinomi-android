@@ -13,7 +13,7 @@ import com.coinomi.wallet.Constants;
 import com.coinomi.wallet.R;
 
 /**
- * @author Giannis Dzegoutanis
+ * @author John L. Jegutanis
  */
 public class NavDrawerItem extends LinearLayout implements Checkable {
     private final TextView title;
@@ -53,6 +53,6 @@ public class NavDrawerItem extends LinearLayout implements Checkable {
 
     @Override
     public void toggle() {
-        setSelected(!isChecked);
+        setChecked(!isChecked);
     }
 }

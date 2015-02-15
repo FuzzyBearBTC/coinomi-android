@@ -11,6 +11,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Toast;
 
+import com.coinomi.core.coins.CoinID;
 import com.coinomi.core.coins.CoinType;
 import com.coinomi.core.coins.DogecoinMain;
 import com.coinomi.core.wallet.SimpleHDKeyChain;
@@ -29,6 +30,7 @@ import org.slf4j.LoggerFactory;
 import org.spongycastle.crypto.params.KeyParameter;
 
 import java.util.ArrayList;
+import java.util.List;
 
 import javax.annotation.Nullable;
 
@@ -41,6 +43,7 @@ public class FinalizeWalletRestorationFragment extends Fragment {
     private String seed;
     private String password;
     private boolean seedProtect;
+    private List<CoinType> coinsToCreate;
 
     private WalletFromSeedTask walletFromSeedTask;
 
@@ -61,12 +64,26 @@ public class FinalizeWalletRestorationFragment extends Fragment {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         if (getArguments() != null) {
-            seed = getArguments().getString(Constants.ARG_SEED);
-            password = getArguments().getString(Constants.ARG_PASSWORD);
-            seedProtect = getArguments().getBoolean(Constants.ARG_SEED_PROTECT);
+            Bundle args = getArguments();
+            seed = args.getString(Constants.ARG_SEED);
+            password = args.getString(Constants.ARG_PASSWORD);
+            seedProtect = args.getBoolean(Constants.ARG_SEED_PROTECT);
+            coinsToCreate = getCoinsTypes(args);
 
             walletFromSeedTask = new WalletFromSeedTask();
             walletFromSeedTask.execute();
+        }
+    }
+
+    private List<CoinType> getCoinsTypes(Bundle args) {
+        if (args.containsKey(Constants.ARG_MULTIPLE_COIN_IDS)) {
+            List<CoinType> coinTypes = new ArrayList<CoinType>();
+            for (String id : args.getStringArrayList(Constants.ARG_MULTIPLE_COIN_IDS)) {
+                coinTypes.add(CoinID.typeFromId(id));
+            }
+            return coinTypes;
+        } else {
+            return Constants.DEFAULT_COINS;
         }
     }
 
@@ -110,7 +127,7 @@ public class FinalizeWalletRestorationFragment extends Fragment {
                 KeyCrypterScrypt crypter = new KeyCrypterScrypt();
                 KeyParameter aesKey = crypter.deriveKey(password);
                 wallet.encrypt(crypter, aesKey);
-                wallet.createCoinPockets(Constants.DEFAULT_COINS, true, aesKey);
+                wallet.createCoinPockets(coinsToCreate, true, aesKey);
                 getWalletApplication().setWallet(wallet);
                 getWalletApplication().saveWalletNow();
                 getWalletApplication().startBlockchainService(CoinService.ServiceMode.RESET_WALLET);
@@ -122,7 +139,7 @@ public class FinalizeWalletRestorationFragment extends Fragment {
         }
 
         protected void onPostExecute(Wallet wallet) {
-            verifyDialog.dismiss(); // FIXME crashes when pressing home button before task is over
+            verifyDialog.dismissAllowingStateLoss();
             if (wallet != null) {
                 startWalletActivity();
             }

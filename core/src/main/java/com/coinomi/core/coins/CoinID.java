@@ -14,7 +14,7 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * @author Giannis Dzegoutanis
+ * @author John L. Jegutanis
  */
 public enum CoinID {
     BITCOIN_MAIN(BitcoinMain.get()),
@@ -29,7 +29,14 @@ public enum CoinID {
     DARKCOIN_MAIN(DarkcoinMain.get()),
     DARKCOIN_TEST(DarkcoinTest.get()),
     NUSHARES_MAIN(NuSharesMain.get()),
-    NUBITS_MAIN(NuBitsMain.get())
+    NUBITS_MAIN(NuBitsMain.get()),
+    NAMECOIN_MAIN(NamecoinMain.get()),
+    FEATHERCOIN_MAIN(FeathercoinMain.get()),
+    BLACKCOIN_MAIN(BlackcoinMain.get()),
+    RUBYCOIN_MAIN(RubycoinMain.get()),
+    URO_MAIN(UroMain.get()),
+    DIGITALCOIN_MAIN(DigitalcoinMain.get()),
+    CANNACOIN_MAIN(CannacoinMain.get())
     ;
 
     static {
@@ -74,18 +81,18 @@ public enum CoinID {
         for(CoinID id : values()) {
             if (id.type.getId().equalsIgnoreCase(stringId)) return id;
         }
-        throw new IllegalArgumentException();
+        throw new IllegalArgumentException("Unsupported ID: " + stringId);
     }
 
     public static CoinID fromUri(String input) {
         for(CoinID id : values()) {
-            if (input.startsWith(id.getCoinType().getUriScheme()+"://")) {
+            if (input.startsWith(id.getCoinType().getUriScheme() + "://")) {
                 return id;
             } else if (input.startsWith(id.getCoinType().getUriScheme()+":")) {
                 return id;
             }
         }
-        throw new IllegalArgumentException();
+        throw new IllegalArgumentException("Unsupported URI: " + input);
     }
 
     public static CoinType typeFromAddress(String address) throws AddressFormatException {
@@ -95,5 +102,12 @@ public enum CoinID {
         } else {
             throw new AddressFormatException("Unsupported address network: " + addressParams.getId());
         }
+    }
+
+    public static CoinType typeFromSymbol(String symbol) {
+        for(CoinID id : values()) {
+            if (id.type.getSymbol().equalsIgnoreCase(symbol)) return id.type;
+        }
+        throw new IllegalArgumentException("Unsupported coin symbol: " + symbol);
     }
 }

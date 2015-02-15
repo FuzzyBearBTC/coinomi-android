@@ -25,9 +25,12 @@ import org.bitcoinj.crypto.KeyCrypter;
 import org.bitcoinj.crypto.KeyCrypterScrypt;
 import org.bitcoinj.utils.BriefLogFormatter;
 import org.bitcoinj.wallet.DeterministicSeed;
+
+import com.coinomi.core.wallet.exceptions.Bip44KeyLookAheadExceededException;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 
+import org.bitcoinj.wallet.KeyChain;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.junit.Before;
@@ -35,14 +38,13 @@ import org.junit.Test;
 import org.spongycastle.crypto.params.KeyParameter;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
 
-import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
@@ -50,7 +52,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 /**
- * @author Giannis Dzegoutanis
+ * @author John L. Jegutanis
  */
 public class WalletPocketTest {
     static final List<String> MNEMONIC = ImmutableList.of("citizen", "fever", "scale", "nurse", "brief", "round", "ski", "fiction", "car", "fitness", "pluck", "act");
@@ -83,12 +85,90 @@ public class WalletPocketTest {
     }
 
     @Test
+    public void issuedKeys() throws Bip44KeyLookAheadExceededException {
+        LinkedList<Address> issuedAddresses = new LinkedList<Address>();
+        assertEquals(0, pocket.getIssuedReceiveAddresses().size());
+        assertEquals(0, pocket.keys.getNumIssuedExternalKeys());
+
+        issuedAddresses.add(0, pocket.currentAddress(KeyChain.KeyPurpose.RECEIVE_FUNDS));
+        Address freshAddress = pocket.getFreshReceiveAddress();
+        assertEquals(freshAddress, pocket.currentAddress(KeyChain.KeyPurpose.RECEIVE_FUNDS));
+        assertEquals(1, pocket.getIssuedReceiveAddresses().size());
+        assertEquals(1, pocket.keys.getNumIssuedExternalKeys());
+        assertEquals(issuedAddresses, pocket.getIssuedReceiveAddresses());
+
+        issuedAddresses.add(0, pocket.currentAddress(KeyChain.KeyPurpose.RECEIVE_FUNDS));
+        freshAddress = pocket.getFreshReceiveAddress();
+        assertEquals(freshAddress, pocket.currentAddress(KeyChain.KeyPurpose.RECEIVE_FUNDS));
+        assertEquals(2, pocket.getIssuedReceiveAddresses().size());
+        assertEquals(2, pocket.keys.getNumIssuedExternalKeys());
+        assertEquals(issuedAddresses, pocket.getIssuedReceiveAddresses());
+    }
+
+    @Test
+    public void issuedKeysLimit() throws Exception {
+        assertTrue(pocket.canCreateFreshReceiveAddress());
+        try {
+            for (int i = 0; i < 100; i++) {
+                pocket.getFreshReceiveAddress();
+            }
+        } catch (Bip44KeyLookAheadExceededException e) {
+            assertFalse(pocket.canCreateFreshReceiveAddress());
+            // We haven't used any key so the total must be 20 - 1 (the unused key)
+            assertEquals(19, pocket.getNumberIssuedReceiveAddresses());
+            assertEquals(19, pocket.getIssuedReceiveAddresses().size());
+        }
+
+        pocket.onConnection(getBlockchainConnection(type));
+
+        assertTrue(pocket.canCreateFreshReceiveAddress());
+        try {
+            for (int i = 0; i < 100; i++) {
+                pocket.getFreshReceiveAddress();
+            }
+        } catch (Bip44KeyLookAheadExceededException e) {
+            try {
+                pocket.getFreshReceiveAddress();
+            } catch (Bip44KeyLookAheadExceededException e1) { }
+            assertFalse(pocket.canCreateFreshReceiveAddress());
+            // We used 18, so the total must be (20-1)+18=37
+            assertEquals(37, pocket.getNumberIssuedReceiveAddresses());
+            assertEquals(37, pocket.getIssuedReceiveAddresses().size());
+        }
+    }
+
+    @Test
+    public void issuedKeysLimit2() throws Exception {
+        assertTrue(pocket.canCreateFreshReceiveAddress());
+        try {
+            for (int i = 0; i < 100; i++) {
+                pocket.getFreshReceiveAddress();
+            }
+        } catch (Bip44KeyLookAheadExceededException e) {
+            assertFalse(pocket.canCreateFreshReceiveAddress());
+            // We haven't used any key so the total must be 20 - 1 (the unused key)
+            assertEquals(19, pocket.getNumberIssuedReceiveAddresses());
+            assertEquals(19, pocket.getIssuedReceiveAddresses().size());
+        }
+    }
+
+    @Test
+    public void usedAddresses() throws Exception {
+        assertEquals(0, pocket.getUsedAddresses().size());
+
+        pocket.onConnection(getBlockchainConnection(type));
+
+        // Receive and change addresses
+        assertEquals(13, pocket.getUsedAddresses().size());
+    }
+
+    @Test
     public void fillTransactions() throws Exception {
         pocket.onConnection(getBlockchainConnection(type));
 
         // Issued keys
-        assertEquals(18, pocket.keys.getIssuedExternalKeys());
-        assertEquals(9, pocket.keys.getIssuedInternalKeys());
+        assertEquals(18, pocket.keys.getNumIssuedExternalKeys());
+        assertEquals(9, pocket.keys.getNumIssuedInternalKeys());
 
         // No addresses left to subscribe
         List<Address> addressesToWatch = pocket.getAddressesToWatch();
@@ -100,7 +180,7 @@ public class WalletPocketTest {
 
         Address receiveAddr = pocket.getReceiveAddress();
         // This key is not issued
-        assertEquals(18, pocket.keys.getIssuedExternalKeys());
+        assertEquals(18, pocket.keys.getNumIssuedExternalKeys());
         assertEquals(67, pocket.addressesStatus.size());
         assertEquals(67, pocket.addressesSubscribed.size());
 
@@ -142,8 +222,8 @@ public class WalletPocketTest {
 
 
         // Issued keys
-        assertEquals(18, newPocket.keys.getIssuedExternalKeys());
-        assertEquals(9, newPocket.keys.getIssuedInternalKeys());
+        assertEquals(18, newPocket.keys.getNumIssuedExternalKeys());
+        assertEquals(9, newPocket.keys.getNumIssuedInternalKeys());
 
         newPocket.onConnection(getBlockchainConnection(type));
 
@@ -166,8 +246,8 @@ public class WalletPocketTest {
         assertEquals(walletPocketProto.toString(), newPocket.toProtobuf().toString());
 
         // Issued keys
-        assertEquals(0, newPocket.keys.getIssuedExternalKeys());
-        assertEquals(0, newPocket.keys.getIssuedInternalKeys());
+        assertEquals(0, newPocket.keys.getNumIssuedExternalKeys());
+        assertEquals(0, newPocket.keys.getNumIssuedInternalKeys());
 
         // 20 lookahead + 20 lookahead
         assertEquals(40, newPocket.keys.getLeafKeys().size());

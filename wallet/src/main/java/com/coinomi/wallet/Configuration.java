@@ -1,17 +1,25 @@
 package com.coinomi.wallet;
 
 import android.content.SharedPreferences;
+import android.content.SharedPreferences.OnSharedPreferenceChangeListener;
 import android.text.format.DateUtils;
 
-import com.coinomi.core.coins.BitcoinMain;
 import com.coinomi.core.coins.CoinID;
 import com.coinomi.core.coins.CoinType;
+import com.coinomi.wallet.util.WalletUtils;
+import com.coinomi.wallet.ExchangeRatesProvider.ExchangeRate;
 
+import org.bitcoinj.core.Coin;
+import org.bitcoinj.utils.Fiat;
+import org.json.JSONException;
+import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.annotation.Nullable;
+
 /**
- * @author Giannis Dzegoutanis
+ * @author John L. Jegutanis
  * @author Andreas Schildbach
  */
 public class Configuration {
@@ -31,8 +39,10 @@ public class Configuration {
     public static final String PREFS_KEY_SELECTED_ADDRESS = "selected_address";
 
     private static final String PREFS_KEY_LABS_QR_PAYMENT_REQUEST = "labs_qr_payment_request";
-    private static final String PREFS_KEY_CACHED_EXCHANGE_CURRENCY = "cached_exchange_currency";
-    private static final String PREFS_KEY_CACHED_EXCHANGE_RATE = "cached_exchange_rate";
+
+    private static final String PREFS_KEY_CACHED_EXCHANGE_LOCAL_CURRENCY = "cached_exchange_local_currency";
+    private static final String PREFS_KEY_CACHED_EXCHANGE_RATES_JSON = "cached_exchange_rates_json";
+
     private static final String PREFS_KEY_LAST_EXCHANGE_DIRECTION = "last_exchange_direction";
     private static final String PREFS_KEY_CHANGE_LOG_VERSION = "change_log_version";
     public static final String PREFS_KEY_REMIND_BACKUP = "remind_backup";
@@ -85,4 +95,65 @@ public class Configuration {
             log.info("last used wallet pocket: {} ", type.getName());
         }
     }
+
+    /**
+     * Returns the user selected currency. If defaultFallback is set to true it return a default
+     * currency is no user selected setting found.
+     */
+    @Nullable
+    public String getExchangeCurrencyCode(boolean useDefaultFallback) {
+        String defaultCode = null;
+        if (useDefaultFallback) {
+            defaultCode = WalletUtils.localeCurrencyCode();
+            defaultCode = defaultCode == null ? Constants.DEFAULT_EXCHANGE_CURRENCY : defaultCode;
+        }
+        return prefs.getString(PREFS_KEY_EXCHANGE_CURRENCY, defaultCode);
+    }
+
+    /**
+     * Returns the user selected currency or if not set the default
+     */
+    public String getExchangeCurrencyCode() {
+        return getExchangeCurrencyCode(true);
+    }
+
+    public void setExchangeCurrencyCode(final String exchangeCurrencyCode) {
+        prefs.edit().putString(PREFS_KEY_EXCHANGE_CURRENCY, exchangeCurrencyCode).apply();
+    }
+
+    public JSONObject getCachedExchangeRatesJson() {
+        try {
+            return new JSONObject(prefs.getString(PREFS_KEY_CACHED_EXCHANGE_RATES_JSON, ""));
+        } catch (JSONException e) {
+            return null;
+        }
+    }
+
+    public String getCachedExchangeLocalCurrency() {
+        return prefs.getString(PREFS_KEY_CACHED_EXCHANGE_LOCAL_CURRENCY, null);
+    }
+
+    public void setCachedExchangeRates(String currency, JSONObject exchangeRatesJson) {
+        final SharedPreferences.Editor edit = prefs.edit();
+        edit.putString(PREFS_KEY_CACHED_EXCHANGE_LOCAL_CURRENCY, currency);
+        edit.putString(PREFS_KEY_CACHED_EXCHANGE_RATES_JSON, exchangeRatesJson.toString());
+        edit.apply();
+    }
+
+    public void registerOnSharedPreferenceChangeListener(final OnSharedPreferenceChangeListener listener) {
+        prefs.registerOnSharedPreferenceChangeListener(listener);
+    }
+
+    public void unregisterOnSharedPreferenceChangeListener(final OnSharedPreferenceChangeListener listener) {
+        prefs.unregisterOnSharedPreferenceChangeListener(listener);
+    }
+
+    public boolean getLastExchangeDirection() {
+        return prefs.getBoolean(PREFS_KEY_LAST_EXCHANGE_DIRECTION, true);
+    }
+
+    public void setLastExchangeDirection(final boolean exchangeDirection) {
+        prefs.edit().putBoolean(PREFS_KEY_LAST_EXCHANGE_DIRECTION, exchangeDirection).apply();
+    }
+
 }

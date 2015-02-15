@@ -1,7 +1,7 @@
 /**
  * Copyright 2013 Google Inc.
  * Copyright 2014 Andreas Schildbach
- * Copyright 2014 Giannis Dzegoutanis
+ * Copyright 2014 John L. Jegutanis
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,6 +27,7 @@ import com.coinomi.core.network.interfaces.BlockchainConnection;
 import com.coinomi.core.network.interfaces.ConnectionEventListener;
 import com.coinomi.core.network.interfaces.TransactionEventListener;
 import com.coinomi.core.protos.Protos;
+import com.coinomi.core.wallet.exceptions.Bip44KeyLookAheadExceededException;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
@@ -74,6 +75,8 @@ import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -87,12 +90,15 @@ import java.util.concurrent.locks.ReentrantLock;
 
 import javax.annotation.Nullable;
 
+import static org.bitcoinj.wallet.KeyChain.KeyPurpose.RECEIVE_FUNDS;
+import static org.bitcoinj.wallet.KeyChain.KeyPurpose.CHANGE;
+
 import static com.coinomi.core.Preconditions.checkArgument;
 import static com.coinomi.core.Preconditions.checkNotNull;
 import static com.coinomi.core.Preconditions.checkState;
 
 /**
- * @author Giannis Dzegoutanis
+ * @author John L. Jegutanis
  *
  *
  */
@@ -100,6 +106,8 @@ public class WalletPocket implements TransactionBag, TransactionEventListener, C
     private static final Logger log = LoggerFactory.getLogger(WalletPocket.class);
 
     private final ReentrantLock lock = Threading.lock("WalletPocket");
+
+    private final static int TX_DEPTH_SAVE_THRESHOLD = 4;
 
     private final CoinType coinType;
 
@@ -154,6 +162,20 @@ public class WalletPocket implements TransactionBag, TransactionEventListener, C
 
     private final transient CopyOnWriteArrayList<ListenerRegistration<WalletPocketEventListener>> listeners;
     @Nullable private transient Wallet wallet = null;
+
+    private Runnable saveLaterRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (wallet != null) wallet.saveLater();
+        }
+    };
+
+    private Runnable saveNowRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (wallet != null) wallet.saveNow();
+        }
+    };
 
     public WalletPocket(DeterministicKey rootKey, CoinType coinType,
                         @Nullable KeyCrypter keyCrypter, @Nullable KeyParameter key) {
@@ -222,6 +244,31 @@ public class WalletPocket implements TransactionBag, TransactionEventListener, C
         }
     }
 
+    /**
+     * Just adds the transaction to a pool without doing anything else
+     * @param pool
+     * @param tx
+     */
+    private void simpleAddTransaction(Pool pool, Transaction tx) {
+        transactions.put(tx.getHash(), tx);
+        switch (pool) {
+            case UNSPENT:
+                checkState(unspent.put(tx.getHash(), tx) == null);
+                break;
+            case SPENT:
+                checkState(spent.put(tx.getHash(), tx) == null);
+                break;
+            case PENDING:
+                checkState(pending.put(tx.getHash(), tx) == null);
+                break;
+            case DEAD:
+                checkState(dead.put(tx.getHash(), tx) == null);
+                break;
+            default:
+                throw new RuntimeException("Unknown wallet transaction type " + pool);
+        }
+    }
+
     private static void addWalletTransactionsToSet(Set<WalletTransaction> txs,
                                                    Pool poolType, Collection<Transaction> pool) {
         for (Transaction tx : pool) {
@@ -251,7 +298,12 @@ public class WalletPocket implements TransactionBag, TransactionEventListener, C
         for (TransactionOutput txo : transaction.getOutputs()) {
             if (txo.isAvailableForSpending()) {
                 // We don't have keys for this txo therefore it is not ours
-                if (keys.findKeyFromPubHash(txo.getScriptPubKey().getPubKeyHash()) == null) {
+                try {
+                    if (keys.findKeyFromPubHash(txo.getScriptPubKey().getPubKeyHash()) == null) {
+                        txo.markAsSpent(null);
+                    }
+                } catch (ScriptException ignore) {
+                    // If we don't understand this output, don't use it
                     txo.markAsSpent(null);
                 }
             }
@@ -276,23 +328,7 @@ public class WalletPocket implements TransactionBag, TransactionEventListener, C
                 }
             }
 
-            transactions.put(tx.getHash(), tx);
-            switch (pool) {
-                case UNSPENT:
-                    checkState(unspent.put(tx.getHash(), tx) == null);
-                    break;
-                case SPENT:
-                    checkState(spent.put(tx.getHash(), tx) == null);
-                    break;
-                case PENDING:
-                    checkState(pending.put(tx.getHash(), tx) == null);
-                    break;
-                case DEAD:
-                    checkState(dead.put(tx.getHash(), tx) == null);
-                    break;
-                default:
-                    throw new RuntimeException("Unknown wallet transaction type " + pool);
-            }
+            simpleAddTransaction(pool, tx);
 
             markNotOwnOutputs(tx);
             connectTransaction(tx);
@@ -526,7 +562,7 @@ public class WalletPocket implements TransactionBag, TransactionEventListener, C
 //                }
 
                 if (toMe) {
-                    value = value.add(tx.getValueSentToMe(this));
+                    value = value.add(tx.getValueSentToMe(this, false));
                 } else {
                     value = value.add(tx.getValue(this));
                 }
@@ -551,12 +587,12 @@ public class WalletPocket implements TransactionBag, TransactionEventListener, C
         broadcastTx(tx, this);
     }
 
-    public void broadcastTx(Transaction tx, TransactionEventListener listener) throws IOException {
+    private void broadcastTx(Transaction tx, TransactionEventListener listener) throws IOException {
         if (isConnected()) {
             if (log.isInfoEnabled()) {
                 log.info("Broadcasting tx {}", Utils.HEX.encode(tx.bitcoinSerialize()));
             }
-            blockchainConnection.broadcastTx(tx, listener);
+            blockchainConnection.broadcastTx(tx, listener != null ? listener : this);
         } else {
             throw new IOException("No connection available");
         }
@@ -725,25 +761,28 @@ public class WalletPocket implements TransactionBag, TransactionEventListener, C
     @Override
     public void onNewBlock(BlockHeader header) {
         log.info("Got a {} block: {}", coinType.getName(), header.getBlockHeight());
+        boolean shouldSave = false;
         lock.lock();
         try {
             lastBlockSeenTimeSecs = header.getTimestamp();
             lastBlockSeenHeight = header.getBlockHeight();
             for (Transaction tx : getTransactions(false)) {
-                maybeUpdateBlockDepth(tx);
+                TransactionConfidence confidence = tx.getConfidence();
+                // Save wallet when we have new TXs
+                if (confidence.getDepthInBlocks() < TX_DEPTH_SAVE_THRESHOLD) shouldSave = true;
+                maybeUpdateBlockDepth(confidence);
             }
             queueOnNewBlock();
         } finally {
             lock.unlock();
         }
-        walletSaveLater();
+        if (shouldSave) walletSaveLater();
     }
 
-    private void maybeUpdateBlockDepth(Transaction tx) {
-        TransactionConfidence confidence = tx.getConfidence();
+    private void maybeUpdateBlockDepth(TransactionConfidence confidence) {
         if (confidence.getConfidenceType() != ConfidenceType.BUILDING) return;
         int newDepth = lastBlockSeenHeight - confidence.getAppearedAtChainHeight() + 1;
-        if (newDepth > 1) tx.getConfidence().setDepthInBlocks(newDepth);
+        if (newDepth > 1) confidence.setDepthInBlocks(newDepth);
     }
 
     @Override
@@ -865,8 +904,9 @@ public class WalletPocket implements TransactionBag, TransactionEventListener, C
             if (tx != null) {
                 log.info("{} getHeight() = " + historyTx.getHeight(), historyTx.getTxHash());
                 if (historyTx.getHeight() > 0 && tx.getConfidence().getDepthInBlocks() == 0) {
-                    tx.getConfidence().setAppearedAtChainHeight(historyTx.getHeight());
-                    maybeUpdateBlockDepth(tx);
+                    TransactionConfidence confidence = tx.getConfidence();
+                    confidence.setAppearedAtChainHeight(historyTx.getHeight());
+                    maybeUpdateBlockDepth(confidence);
                 }
             } else {
                 log.error("Could not find {} in the transactions pool. Aborting applying state",
@@ -886,6 +926,7 @@ public class WalletPocket implements TransactionBag, TransactionEventListener, C
     }
 
     private void markUnspentTXO(AddressStatus status, Map<Sha256Hash, Transaction> txs) {
+        checkState(lock.isHeldByCurrentThread());
         Set<UnspentTx> utxs = status.getUnspentTxs();
         ArrayList<TransactionOutput> unspentOutputs = new ArrayList<TransactionOutput>(utxs.size());
         // Mark unspent outputs
@@ -910,8 +951,15 @@ public class WalletPocket implements TransactionBag, TransactionEventListener, C
                 for (TransactionOutput txo : tx.getOutputs()) {
                     log.info("- ΤΧΟ {}:{}", txo.getParentTransaction().getHash(), txo.getIndex());
 
-                    boolean belongsToAddress = Arrays.equals(txo.getScriptPubKey().getPubKeyHash(),
-                            status.getAddress().getHash160());
+
+                    boolean belongsToAddress = false;
+                    try {
+                        belongsToAddress = Arrays.equals(txo.getScriptPubKey().getPubKeyHash(),
+                                status.getAddress().getHash160());
+                    } catch (ScriptException ignore) {
+                        // If we cannot understand this output, it doesn't belong to the address
+                    }
+
 
                     if (belongsToAddress && !unspentOutputs.contains(txo)) {
                         // if not pending and has unspent outputs that should be spent
@@ -937,8 +985,13 @@ public class WalletPocket implements TransactionBag, TransactionEventListener, C
         if (tx.getConfidence().getConfidenceType() != ConfidenceType.BUILDING) return;
         // Connect to other transactions in the wallet pocket
         if (log.isInfoEnabled()) log.info("Connecting inputs of tx {}", tx.getHash());
+        int txiIndex = 0;
         for (TransactionInput txi : tx.getInputs()) {
-            if (txi.getConnectedOutput() != null) continue; // skip connected inputs
+            if (txi.getConnectedOutput() != null) {
+                log.info("skipping an already connected txi {}", txi);
+                txiIndex++;
+                continue; // skip connected inputs
+            }
             Sha256Hash outputHash = txi.getOutpoint().getHash();
             Transaction fromTx = transactions.get(outputHash);
             if (fromTx != null) {
@@ -952,7 +1005,11 @@ public class WalletPocket implements TransactionBag, TransactionEventListener, C
                         log.warn("Already spent {}, forcing unspent and retry", out);
                         out.markAsUnspent();
                     } else {
-                        log.info("Txi connected to {}:{}", fromTx.getHash(), txi.getOutpoint().getIndex());
+                        if (log.isInfoEnabled()) {
+                            log.info("Connected {}:{} to {}:{}", fromTx.getHash(),
+                                    txi.getOutpoint().getIndex(), tx.getHashAsString(), txiIndex);
+
+                        }
                         break; // No errors, break the loop
                     }
                 }
@@ -960,9 +1017,10 @@ public class WalletPocket implements TransactionBag, TransactionEventListener, C
                 maybeMovePool(fromTx);
             }
             else {
-                log.info("No output found for input {}:{}", txi.getParentTransaction().getHash(),
-                        txi.getOutpoint().getIndex());
+                log.info("No output found for input {}:{}", tx.getHashAsString(),
+                        txiIndex);
             }
+            txiIndex++;
         }
         maybeMovePool(tx);
     }
@@ -1071,15 +1129,16 @@ public class WalletPocket implements TransactionBag, TransactionEventListener, C
         try {
             log.info("Transaction sent {}", tx);
             //FIXME, when enabled it breaks the transactions connections and we get an incorrect coin balance
-//            addNewTransactionIfNeeded(tx);
+            addNewTransactionIfNeeded(tx);
         } finally {
             lock.unlock();
         }
+        queueOnTransactionBroadcastSuccess(tx);
     }
 
     @Override
-    public void onTransactionBroadcastError(Transaction tx, Throwable throwable) {
-        log.error("Error broadcasting transaction {}", tx.getHash(), throwable);
+    public void onTransactionBroadcastError(Transaction tx) {
+        queueOnTransactionBroadcastFailure(tx);
     }
 
     @Override
@@ -1191,6 +1250,28 @@ public class WalletPocket implements TransactionBag, TransactionEventListener, C
         }
     }
 
+    private void queueOnTransactionBroadcastSuccess(final Transaction tx) {
+        for (final ListenerRegistration<WalletPocketEventListener> registration : listeners) {
+            registration.executor.execute(new Runnable() {
+                @Override
+                public void run() {
+                    registration.listener.onTransactionBroadcastSuccess(WalletPocket.this, tx);
+                }
+            });
+        }
+    }
+
+    private void queueOnTransactionBroadcastFailure(final Transaction tx) {
+        for (final ListenerRegistration<WalletPocketEventListener> registration : listeners) {
+            registration.executor.execute(new Runnable() {
+                @Override
+                public void run() {
+                    registration.listener.onTransactionBroadcastFailure(WalletPocket.this, tx);
+                }
+            });
+        }
+    }
+
     //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     //
     // Serialization support
@@ -1217,32 +1298,28 @@ public class WalletPocket implements TransactionBag, TransactionEventListener, C
 
     // Util
     private void walletSaveLater() {
-        if (wallet != null) {
-            // Save in another thread to avoid cyclic locking of Wallet and WalletPocket
-            Threading.USER_THREAD.execute(new Runnable() {
-                @Override
-                public void run() {
-                    wallet.saveLater();
-                }
-            });
-        }
+        // Save in another thread to avoid cyclic locking of Wallet and WalletPocket
+        Threading.USER_THREAD.execute(saveLaterRunnable);
     }
 
     private void walletSaveNow() {
-        if (wallet != null) {
-            // Save in another thread to avoid cyclic locking of Wallet and WalletPocket
-            Threading.USER_THREAD.execute(new Runnable() {
-                @Override
-                public void run() {
-                    wallet.saveNow();
-                }
-            });
-        }
+        // Save in another thread to avoid cyclic locking of Wallet and WalletPocket
+        Threading.USER_THREAD.execute(saveNowRunnable);
     }
 
     public void restoreWalletTransactions(ArrayList<WalletTransaction> wtxs) {
-        for (WalletTransaction wtx : wtxs) {
-            addWalletTransaction(wtx.getPool(), wtx.getTransaction(), false);
+        // FIXME There is a very rare bug that doesn't properly persist tx connections, so do a sanity check by reconnecting transactions
+        lock.lock();
+        try {
+            for (WalletTransaction wtx : wtxs) {
+                simpleAddTransaction(wtx.getPool(), wtx.getTransaction());
+                markNotOwnOutputs(wtx.getTransaction());
+            }
+            for (Transaction utx : getTransactions(false)) {
+                connectTransaction(utx);
+            }
+        } finally {
+            lock.unlock();
         }
     }
 
@@ -1897,24 +1974,137 @@ public class WalletPocket implements TransactionBag, TransactionEventListener, C
 
     /** Returns the address used for change outputs. Note: this will probably go away in future. */
     Address getChangeAddress() {
-        return currentAddress(SimpleHDKeyChain.KeyPurpose.CHANGE);
+        return currentAddress(CHANGE);
     }
 
+    /**
+     * Get current receive address, does not mark it as used
+     */
     public Address getReceiveAddress() {
-        return currentAddress(SimpleHDKeyChain.KeyPurpose.RECEIVE_FUNDS);
+        return currentAddress(RECEIVE_FUNDS);
     }
 
+    /**
+     * Returns true is it is possible to create new fresh receive addresses, false otherwise
+     */
+    public boolean canCreateFreshReceiveAddress() {
+        lock.lock();
+        try {
+            DeterministicKey currentUnusedKey = keys.getCurrentUnusedKey(RECEIVE_FUNDS);
+            int maximumKeyIndex = SimpleHDKeyChain.LOOKAHEAD - 1;
+
+            // If there are used keys
+            if (!addressesStatus.isEmpty()) {
+                int lastUsedKeyIndex = 0;
+                // Find the last used key index
+                for (Map.Entry<Address, String> entry : addressesStatus.entrySet()) {
+                    if (entry.getValue() == null) continue;
+                    DeterministicKey usedKey = keys.findKeyFromPubHash(entry.getKey().getHash160());
+                    if (usedKey != null && keys.isExternal(usedKey) && usedKey.getChildNumber().num() > lastUsedKeyIndex) {
+                        lastUsedKeyIndex = usedKey.getChildNumber().num();
+                    }
+                }
+                maximumKeyIndex = lastUsedKeyIndex + SimpleHDKeyChain.LOOKAHEAD;
+            }
+
+            log.info("Maximum key index for new key is {}", maximumKeyIndex);
+
+            // If we exceeded the BIP44 look ahead threshold
+            return currentUnusedKey.getChildNumber().num() < maximumKeyIndex;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     * Get a fresh address by marking the current receive address as used. It will throw
+     * {@link Bip44KeyLookAheadExceededException} if we requested too many addresses that
+     * exceed the BIP44 look ahead threshold.
+     */
+    public Address getFreshReceiveAddress() throws Bip44KeyLookAheadExceededException {
+        lock.lock();
+        try {
+            if (!canCreateFreshReceiveAddress()) {
+                throw new Bip44KeyLookAheadExceededException();
+            }
+            keys.getKey(RECEIVE_FUNDS);
+            return currentAddress(RECEIVE_FUNDS);
+        } finally {
+            lock.unlock();
+            walletSaveNow();
+        }
+    }
+
+    private static final Comparator<DeterministicKey> HD_KEY_COMPARATOR =
+            new Comparator<DeterministicKey>() {
+                @Override
+                public int compare(final DeterministicKey k1, final DeterministicKey k2) {
+                    return Integer.compare(k2.getChildNumber().num(), k1.getChildNumber().num());
+                }
+            };
+
+    /**
+     * Returns the number of issued receiving keys
+     */
+    public int getNumberIssuedReceiveAddresses() {
+        lock.lock();
+        try {
+            return keys.getNumIssuedExternalKeys();
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     * Returns a list of addresses that have been issued.
+     * The list is sorted in descending chronological order: older in the end
+     */
+    public List<Address> getIssuedReceiveAddresses() {
+        lock.lock();
+        try {
+            ArrayList<DeterministicKey> issuedKeys = keys.getIssuedExternalKeys();
+            ArrayList<Address> receiveAddresses = new ArrayList<Address>();
+
+            Collections.sort(issuedKeys, HD_KEY_COMPARATOR);
+
+            for (ECKey key : issuedKeys) {
+                receiveAddresses.add(key.toAddress(coinType));
+            }
+            return receiveAddresses;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     * Get the currently used receiving and change addresses
+     */
+    public Set<Address> getUsedAddresses() {
+        lock.lock();
+        try {
+            HashSet<Address> usedAddresses = new HashSet<Address>();
+
+            for (Map.Entry<Address, String> entry : addressesStatus.entrySet()) {
+                if (entry.getValue() != null) {
+                    usedAddresses.add(entry.getKey());
+                }
+            }
+
+            return usedAddresses;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     * Get the currently latest unused address by purpose.
+     */
     @VisibleForTesting Address currentAddress(SimpleHDKeyChain.KeyPurpose purpose) {
         lock.lock();
         try {
-            DeterministicKey key = keys.getCurrentUnusedKey(purpose);
-//            DeterministicKey key = keys.getKey(purpose);
-            log.info("Current address, get key n. {} {}", key.getChildNumber().num(),
-                    key.toAddress(coinType));
-            return key.toAddress(coinType);
+            return keys.getCurrentUnusedKey(purpose).toAddress(coinType);
         } finally {
             lock.unlock();
-
             subscribeIfNeeded();
         }
     }

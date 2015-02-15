@@ -2,26 +2,26 @@ package com.coinomi.wallet.ui;
 
 import android.content.Intent;
 import android.os.AsyncTask;
-import android.os.Handler;
 import android.support.v4.app.Fragment;
 import android.support.v4.app.FragmentTransaction;
-import android.support.v7.app.ActionBarActivity;
 import android.os.Bundle;
 import android.widget.Toast;
 
+import com.coinomi.core.coins.CoinID;
 import com.coinomi.core.coins.CoinType;
 import com.coinomi.core.wallet.Wallet;
 import com.coinomi.wallet.Constants;
 import com.coinomi.wallet.R;
-import com.coinomi.wallet.WalletApplication;
 
 import org.spongycastle.crypto.params.KeyParameter;
+
+import java.util.ArrayList;
 
 import javax.annotation.CheckForNull;
 import javax.annotation.Nullable;
 
-public class AddCoinsActivity extends ActionBarActivity implements SelectCoinsFragment.Listener,
-        PasswordConfirmationFragment.Listener{
+public class AddCoinsActivity extends AbstractWalletActionBarActivity
+        implements SelectCoinsFragment.Listener, PasswordConfirmationFragment.Listener{
 
     @CheckForNull private Wallet wallet;
     private WalletFromSeedTask addCoinTask;
@@ -42,11 +42,6 @@ public class AddCoinsActivity extends ActionBarActivity implements SelectCoinsFr
         wallet = getWalletApplication().getWallet();
     }
 
-
-    protected WalletApplication getWalletApplication() {
-        return (WalletApplication) getApplication();
-    }
-
     private void replaceFragment(Fragment fragment) {
         FragmentTransaction transaction = getSupportFragmentManager().beginTransaction();
 
@@ -60,17 +55,22 @@ public class AddCoinsActivity extends ActionBarActivity implements SelectCoinsFr
     }
 
     @Override
-    public void onCoinSelected(CoinType type) {
-        this.selectedCoin = type;
+    public void onCoinSelection(Bundle args) {
+        ArrayList<String> ids = args.getStringArrayList(Constants.ARG_MULTIPLE_COIN_IDS);
 
-        if (wallet.isPocketExists(type)) {
-            result(getResources().getString(R.string.add_coin_accounts_error));
+        // For new we add only one coin at a time
+        this.selectedCoin = CoinID.typeFromId(ids.get(0));
+
+        if (wallet.isPocketExists(this.selectedCoin)) {
+            String message = getResources().getString(R.string.add_coin_accounts_error);
+            Toast.makeText(AddCoinsActivity.this, message, Toast.LENGTH_LONG).show();
             return;
         }
 
         if (wallet.isEncrypted()) {
-            replaceFragment(PasswordConfirmationFragment.newInstance(
-                    getResources().getString(R.string.password_add_coin, type.getName())));
+            String message = getResources().getString(
+                    R.string.password_add_coin, this.selectedCoin.getName());
+            replaceFragment(PasswordConfirmationFragment.newInstance(message));
         } else {
             addCoin(null);
         }

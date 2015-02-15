@@ -1,37 +1,45 @@
 package com.coinomi.wallet.ui.widget;
 
 import android.content.Context;
-import android.content.res.TypedArray;
+import android.database.ContentObserver;
+import android.os.Handler;
+import android.support.v7.view.ActionMode;
 import android.util.AttributeSet;
 import android.view.LayoutInflater;
+import android.view.Menu;
+import android.view.MenuInflater;
+import android.view.MenuItem;
 import android.view.View;
 import android.widget.LinearLayout;
-import android.widget.TextView;
 
 import com.coinomi.core.coins.CoinType;
 import com.coinomi.core.util.GenericUtils;
 import com.coinomi.core.wallet.WalletPocket;
+import com.coinomi.wallet.AddressBookProvider;
 import com.coinomi.wallet.R;
-import com.coinomi.wallet.util.Fonts;
+import com.coinomi.wallet.ui.EditAddressBookEntryFragment;
 
+import org.bitcoinj.core.Address;
 import org.bitcoinj.core.Coin;
-import org.bitcoinj.core.InsufficientMoneyException;
 import org.bitcoinj.core.Transaction;
-import org.bitcoinj.core.TransactionInput;
 import org.bitcoinj.core.TransactionOutput;
-
-import java.util.List;
+import org.bitcoinj.utils.ExchangeRate;
 
 import static com.coinomi.core.Preconditions.checkState;
 
 /**
- * @author Giannis Dzegoutanis
+ * @author John L. Jegutanis
  */
 public class TransactionAmountVisualizer extends LinearLayout {
 
-
     private final SendOutput output;
     private final SendOutput fee;
+    private Coin outputAmount;
+    private Coin feeAmount;
+    private boolean isSending;
+
+    private String address;
+    private CoinType type;
 
     public TransactionAmountVisualizer(Context context, AttributeSet attrs) {
         super(context, attrs);
@@ -44,13 +52,12 @@ public class TransactionAmountVisualizer extends LinearLayout {
         fee.setVisibility(View.GONE);
     }
 
-
     public void setTransaction(WalletPocket pocket, Transaction tx) {
-        CoinType type = pocket.getCoinType();
+        type = pocket.getCoinType();
         String symbol = type.getSymbol();
 
         final Coin value = tx.getValue(pocket);
-        final boolean isSending = value.signum() < 0;
+        isSending = value.signum() < 0;
         // if sending and all the outputs point inside the current pocket. If received
         boolean isInternalTransfer = isSending;
         output.setVisibility(View.VISIBLE);
@@ -63,9 +70,13 @@ public class TransactionAmountVisualizer extends LinearLayout {
             }
 
             // TODO support more than one output
-            output.setAmount(GenericUtils.formatValue(type, txo.getValue()));
+            outputAmount = txo.getValue();
+            output.setAmount(GenericUtils.formatCoinValue(type, outputAmount));
             output.setSymbol(symbol);
-            output.setAddress(txo.getScriptPubKey().getToAddress(type).toString());
+            address = txo.getScriptPubKey().getToAddress(type).toString();
+            output.setLabelAndAddress(
+                    AddressBookProvider.resolveLabel(getContext(), type, address), address);
+            break; // TODO remove when supporting more than one output
         }
 
         if (isInternalTransfer) {
@@ -74,11 +85,32 @@ public class TransactionAmountVisualizer extends LinearLayout {
 
         output.setSending(isSending);
 
-        Coin feeAmount = tx.getFee();
+        feeAmount = tx.getFee();
         if (isSending && feeAmount != null && !feeAmount.isZero()) {
             fee.setVisibility(View.VISIBLE);
-            fee.setAmount(GenericUtils.formatValue(type, tx.getFee()));
+            fee.setAmount(GenericUtils.formatCoinValue(type, feeAmount));
             fee.setSymbol(symbol);
         }
+    }
+
+    public void setExchangeRate(ExchangeRate rate) {
+        if (outputAmount != null) {
+            String fiatAmount = GenericUtils.formatFiatValue(
+                    rate.coinToFiat(outputAmount));
+            output.setAmountLocal(fiatAmount);
+            output.setSymbolLocal(rate.fiat.currencyCode);
+        }
+
+        if (isSending && feeAmount != null) {
+            String fiatAmount = GenericUtils.formatFiatValue(
+                    rate.coinToFiat(feeAmount));
+            fee.setAmountLocal(fiatAmount);
+            fee.setSymbolLocal(rate.fiat.currencyCode);
+        }
+    }
+
+    public void resetLabels() {
+        output.setLabelAndAddress(
+                AddressBookProvider.resolveLabel(getContext(), type, address), address);
     }
 }

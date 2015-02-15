@@ -10,7 +10,7 @@ import android.support.v4.app.DialogFragment;
 import com.coinomi.wallet.R;
 
 /**
- * @author Giannis Dzegoutanis
+ * @author John L. Jegutanis
  */
 public class Dialogs {
     public static final String MESSAGE = "message";
@@ -39,23 +39,4 @@ public class Dialogs {
             return dialog;
         }
     }
-
-    public static class ErrorDialogFragment extends DialogFragment {
-        public static ErrorDialogFragment newInstance(String message) {
-            return (ErrorDialogFragment) setMessage(new ErrorDialogFragment(), message);
-        }
-        @Override
-        public Dialog onCreateDialog(Bundle savedInstanceState) {
-            AlertDialog.Builder builder = new AlertDialog.Builder(getActivity())
-                    .setMessage(getArguments().getString(MESSAGE))
-                    .setPositiveButton(R.string.button_ok, new DialogInterface.OnClickListener() {
-                        @Override
-                        public void onClick(DialogInterface dialog, int which) {
-                            dismiss();
-                        }
-                    });
-            return builder.create();
-        }
-    }
-
 }

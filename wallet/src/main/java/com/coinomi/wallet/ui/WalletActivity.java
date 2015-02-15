@@ -2,14 +2,14 @@ package com.coinomi.wallet.ui;
 
 import android.app.Activity;
 import android.content.Intent;
-import android.os.AsyncTask;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Message;
 import android.support.v4.app.Fragment;
 import android.support.v4.app.FragmentStatePagerAdapter;
 import android.support.v4.view.ViewPager;
 import android.support.v4.widget.DrawerLayout;
 import android.support.v7.app.ActionBar;
-import android.support.v7.app.ActionBarActivity;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.widget.Toast;
@@ -18,29 +18,34 @@ import com.coinomi.core.coins.CoinID;
 import com.coinomi.core.coins.CoinType;
 import com.coinomi.core.uri.CoinURI;
 import com.coinomi.core.uri.CoinURIParseException;
+import com.coinomi.core.wallet.WalletPocket;
 import com.coinomi.wallet.Constants;
 import com.coinomi.wallet.R;
-import com.coinomi.wallet.WalletApplication;
 import com.coinomi.wallet.service.CoinService;
 import com.coinomi.wallet.service.CoinServiceImpl;
+import com.coinomi.wallet.util.Keyboard;
 
+import org.bitcoinj.core.Transaction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * @author Giannis Dzegoutanis
+ * @author John L. Jegutanis
  * @author Andreas Schildbach
  */
-final public class WalletActivity extends ActionBarActivity implements
-        NavigationDrawerFragment.NavigationDrawerCallbacks {
+final public class WalletActivity extends AbstractWalletActionBarActivity implements
+        NavigationDrawerFragment.NavigationDrawerCallbacks, BalanceFragment.Listener {
     private static final Logger log = LoggerFactory.getLogger(WalletActivity.class);
 
     private static final int RECEIVE = 0;
-    private static final int INFO = 1;
+    private static final int BALANCE = 1;
     private static final int SEND = 2;
 
     private static final int REQUEST_CODE_SCAN = 0;
     private static final int ADD_COIN = 1;
+
+    private static final int TX_BROADCAST_OK = 0;
+    private static final int TX_BROADCAST_ERROR = 1;
 
     /**
      * Fragment managing the behaviors, interactions and presentation of the navigation drawer.
@@ -58,8 +63,26 @@ final public class WalletActivity extends ActionBarActivity implements
      * For SharedPreferences, used to check if first launch ever.
      */
     private ViewPager mViewPager;
-    private AsyncTask<Void, Void, Void> refreshTask;
     private CoinType currentType;
+    private Intent connectCoinIntent;
+
+    Handler handler = new Handler() {
+        @Override
+        public void handleMessage(Message msg) {
+            switch (msg.what) {
+                case TX_BROADCAST_OK:
+                    Toast.makeText(WalletActivity.this, getString(R.string.sent_msg),
+                            Toast.LENGTH_LONG).show();
+                    goToBalance();
+                    break;
+                case TX_BROADCAST_ERROR:
+                    Toast.makeText(WalletActivity.this, getString(R.string.get_tx_broadcast_error),
+                            Toast.LENGTH_LONG).show();
+                    goToBalance();
+                    break;
+            }
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -86,6 +109,16 @@ final public class WalletActivity extends ActionBarActivity implements
         // Set OffscreenPageLimit to 2 because receive fragment draws a QR code and we don't
         // want to re-render that if we go to the SendFragment and back
         mViewPager.setOffscreenPageLimit(2);
+        mViewPager.setOnPageChangeListener(new ViewPager.OnPageChangeListener() {
+            @Override public void onPageScrolled(int pos, float posOffset, int posOffsetPixels) { }
+
+            @Override
+            public void onPageSelected(int position) {
+                if (position == BALANCE) Keyboard.hideKeyboard(WalletActivity.this);
+            }
+
+            @Override public void onPageScrollStateChanged(int state) {}
+        });
 
         // Get the last used wallet pocket and select it
         CoinType lastPocket = getWalletApplication().getConfiguration().getLastPocket();
@@ -97,13 +130,25 @@ final public class WalletActivity extends ActionBarActivity implements
         super.onResume();
 
         getWalletApplication().startBlockchainService(CoinService.ServiceMode.CANCEL_COINS_RECEIVED);
-
+        connectCoinService();
         //TODO
 //        checkLowStorageAlert();
     }
 
-    protected WalletApplication getWalletApplication() {
-        return (WalletApplication) getApplication();
+
+    @Override
+    public void onLocalAmountClick() {
+        startExchangeRates();
+    }
+
+    @Override
+    public void onTransactionBroadcastSuccess(WalletPocket pocket, Transaction transaction) {
+        handler.sendMessage(handler.obtainMessage(TX_BROADCAST_OK, transaction));
+    }
+
+    @Override
+    public void onTransactionBroadcastFailure(WalletPocket pocket, Transaction transaction) {
+        handler.sendMessage(handler.obtainMessage(TX_BROADCAST_ERROR, transaction));
     }
 
     @Override
@@ -125,16 +170,21 @@ final public class WalletActivity extends ActionBarActivity implements
             coinIconRes = Constants.COINS_ICONS.get(coinType);
             AppSectionsPagerAdapter adapter = new AppSectionsPagerAdapter(this, coinType);
             mViewPager.setAdapter(adapter);
-            mViewPager.setCurrentItem(INFO);
+            mViewPager.setCurrentItem(BALANCE);
             mViewPager.getAdapter().notifyDataSetChanged();
             getWalletApplication().getConfiguration().touchLastPocket(coinType);
-
-            // Open connection if needed or possible
-            Intent intent = new Intent(CoinService.ACTION_CONNECT_COIN, null,
-                    getWalletApplication(), CoinServiceImpl.class);
-            intent.putExtra(Constants.ARG_COIN_ID, currentType.getId());
-            getWalletApplication().startService(intent);
+            connectCoinService();
         }
+    }
+
+    private void connectCoinService() {
+        if (connectCoinIntent == null) {
+            connectCoinIntent = new Intent(CoinService.ACTION_CONNECT_COIN, null,
+                    getWalletApplication(), CoinServiceImpl.class);
+        }
+        // Open connection if needed or possible
+        connectCoinIntent.putExtra(Constants.ARG_COIN_ID, currentType.getId());
+        getWalletApplication().startService(connectCoinIntent);
     }
 
     public void restoreActionBar() {
@@ -183,9 +233,14 @@ final public class WalletActivity extends ActionBarActivity implements
         mNavigationDrawerFragment.selectItem(coinUri.getType());
         if (mViewPager != null) {
             mViewPager.setCurrentItem(SEND);
-            AppSectionsPagerAdapter adapter = (AppSectionsPagerAdapter) mViewPager.getAdapter();
-            SendFragment send = (SendFragment) adapter.getItem(SEND);
-            send.updateStateFrom(coinUri.getAddress(), coinUri.getAmount(), coinUri.getLabel());
+
+            for (Fragment fragment : getSupportFragmentManager().getFragments()) {
+                if (fragment instanceof SendFragment) {
+                    ((SendFragment) fragment)
+                            .updateStateFrom(coinUri.getAddress(), coinUri.getAmount(), coinUri.getLabel());
+                    break;
+                }
+            }
         }
     }
 
@@ -225,9 +280,22 @@ final public class WalletActivity extends ActionBarActivity implements
         } else if (id == R.id.action_about) {
             startActivity(new Intent(WalletActivity.this, AboutActivity.class));
             return true;
+        } else if (id == R.id.action_exchange_rates) {
+            startExchangeRates();
+            return true;
         }
 
         return super.onOptionsItemSelected(item);
+    }
+
+    void startExchangeRates() {
+        if (currentType != null) {
+            Intent intent = new Intent(this, ExchangeRatesActivity.class);
+            intent.putExtra(Constants.ARG_COIN_ID, currentType.getId());
+            startActivity(intent);
+        } else {
+            Toast.makeText(this, R.string.no_wallet_pocket_selected, Toast.LENGTH_LONG).show();
+        }
     }
 
     private void refreshWallet() {
@@ -252,11 +320,28 @@ final public class WalletActivity extends ActionBarActivity implements
         startActivity(new Intent(this, IntroActivity.class));
     }
 
+    @Override
+    public void onBackPressed() {
+        // If not in balance screen, back button brings us there
+        boolean screenChanged = goToBalance();
+        if (!screenChanged) {
+            super.onBackPressed();
+        }
+    }
+
+    private boolean goToBalance() {
+        if (mViewPager != null && mViewPager.getCurrentItem() != BALANCE) {
+            mViewPager.setCurrentItem(BALANCE);
+            return true;
+        }
+        return false;
+    }
+
     private static class AppSectionsPagerAdapter extends FragmentStatePagerAdapter {
 
         private final CoinType type;
         private final WalletActivity walletActivity;
-        private RequestFragment request;
+        private AddressRequestFragment request;
         private SendFragment send;
         private BalanceFragment balance;
 
@@ -270,12 +355,12 @@ final public class WalletActivity extends ActionBarActivity implements
         public Fragment getItem(int i) {
             switch (i) {
                 case RECEIVE:
-                    if (request == null) request = RequestFragment.newInstance(type);
+                    if (request == null) request = AddressRequestFragment.newInstance(type);
                     return request;
                 case SEND:
                     if (send == null) send = SendFragment.newInstance(type);
                     return send;
-                case INFO:
+                case BALANCE:
                 default:
                     if (balance == null) balance = BalanceFragment.newInstance(type);
                     return balance;
@@ -294,7 +379,7 @@ final public class WalletActivity extends ActionBarActivity implements
                     return walletActivity.getString(R.string.wallet_title_request);
                 case SEND:
                     return walletActivity.getString(R.string.wallet_title_send);
-                case INFO:
+                case BALANCE:
                 default:
                     return walletActivity.getString(R.string.wallet_title_balance);
             }

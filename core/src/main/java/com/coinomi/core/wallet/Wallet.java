@@ -46,7 +46,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
 
 /**
- * @author Giannis Dzegoutanis
+ * @author John L. Jegutanis
  */
 final public class Wallet {
     private static final Logger log = LoggerFactory.getLogger(Wallet.class);
@@ -119,7 +119,7 @@ final public class Wallet {
                 log.info("Creating coin pocket for {}", coin);
                 maybeCreatePocket(coin, key);
                 WalletPocket pocket = getPocket(coin);
-                if (generateAllKeys && pocket != null) {
+                if (generateAllKeys) {
                     pocket.maybeInitializeAllKeys();
                 }
             }
@@ -468,8 +468,9 @@ final public class Wallet {
         try {
             WalletFiles files = vFileManager;
             vFileManager = null;
-            checkState(files != null, "Auto saving not enabled.");
-            files.shutdownAndWait();
+            if (files != null) {
+                files.shutdownAndWait();
+            }
         } finally {
             lock.unlock();
         }
@@ -581,10 +582,6 @@ final public class Wallet {
     }
 
     public void broadcastTx(SendRequest request) throws IOException{
-        broadcastTx(request.type, request.tx, null);
-    }
-
-    private void broadcastTx(CoinType type, Transaction tx, TransactionEventListener listener) throws IOException {
-        getPocket(type).broadcastTx(tx, listener);
+        getPocket(request.type).broadcastTx(request.tx);
     }
 }

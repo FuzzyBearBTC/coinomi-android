@@ -13,12 +13,13 @@ import android.os.Build;
 
 import com.coinomi.wallet.R;
 
-public class TransactionDetailsActivity extends ActionBarActivity {
+public class TransactionDetailsActivity extends AbstractWalletActionBarActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_transaction_details);
+
         if (savedInstanceState == null) {
             TransactionDetailsFragment fragment = new TransactionDetailsFragment();
             fragment.setArguments(getIntent().getExtras());

@@ -1,7 +1,7 @@
 /**
  * Copyright 2012 Google Inc.
  * Copyright 2014 Andreas Schildbach
- * Copyright 2014 Giannis Dzegoutanis
+ * Copyright 2014 John L. Jegutanis
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
  */
 package com.coinomi.core.wallet;
 
+import com.coinomi.core.coins.CoinID;
 import com.coinomi.core.coins.CoinType;
 import com.coinomi.core.network.AddressStatus;
 import com.coinomi.core.protos.Protos;
@@ -54,12 +55,15 @@ import javax.annotation.Nullable;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
+import static org.bitcoinj.params.Networks.Family.BLACKCOIN;
 import static org.bitcoinj.params.Networks.Family.PEERCOIN;
 import static org.bitcoinj.params.Networks.Family.NUBITS;
 import static org.bitcoinj.params.Networks.Family.REDDCOIN;
+import static org.bitcoinj.params.Networks.Family.RUBYCOIN;
+import static org.bitcoinj.params.Networks.Family.CANNACOIN;
 
 /**
- * @author Giannis Dzegoutanis
+ * @author John L. Jegutanis
  */
 public class WalletPocketProtobufSerializer {
     private static final Logger log = LoggerFactory.getLogger(WalletPocketProtobufSerializer.class);
@@ -115,7 +119,8 @@ public class WalletPocketProtobufSerializer {
                 .setVersion((int) tx.getVersion());
 
         Networks.Family family = Networks.getFamily(tx.getParams());
-        if (Networks.isFamily(tx.getParams(), PEERCOIN, NUBITS, REDDCOIN)) {
+        if (Networks.isFamily(tx.getParams(), PEERCOIN, NUBITS, BLACKCOIN,
+                                              REDDCOIN, RUBYCOIN, CANNACOIN)) {
             txBuilder.setTime((int) tx.getTime());
         }
 
@@ -248,10 +253,12 @@ public class WalletPocketProtobufSerializer {
      * @throws UnreadableWalletException thrown in various error conditions (see description).
      */
     public WalletPocket readWallet(Protos.WalletPocket walletProto, @Nullable KeyCrypter keyCrypter) throws UnreadableWalletException {
-        final String paramsID = walletProto.getNetworkIdentifier();
-        CoinType coinType = CoinType.fromID(paramsID);
-        if (coinType == null)
-            throw new UnreadableWalletException("Unknown network parameters ID " + paramsID);
+        CoinType coinType;
+        try {
+            coinType = CoinID.typeFromId(walletProto.getNetworkIdentifier());
+        } catch (IllegalArgumentException e) {
+            throw new UnreadableWalletException("Unknown network parameters ID " + walletProto.getNetworkIdentifier());
+        }
 
         // Read the scrypt parameters that specify how encryption and decryption is performed.
         SimpleHDKeyChain chain;
@@ -321,7 +328,8 @@ public class WalletPocketProtobufSerializer {
 
         tx.setVersion(txProto.getVersion());
 
-        if (Networks.isFamily(tx.getParams(), PEERCOIN, NUBITS, REDDCOIN)) {
+        if (Networks.isFamily(tx.getParams(), PEERCOIN, NUBITS, BLACKCOIN,
+                                              REDDCOIN, RUBYCOIN, CANNACOIN)) {
             tx.setTime(txProto.getTime());
         }
 

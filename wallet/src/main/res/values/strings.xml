@@ -4,15 +4,19 @@
     <string name="app_name">Coinomi (dev)</string>
     <string name="navigation_drawer_open">Open navigation drawer</string>
     <string name="navigation_drawer_close">Close navigation drawer</string>
-    <string name="scan_qr_code_menu">Scan</string>
+    <string name="action_scan_qr_code">Scan</string>
     <string name="action_share">Share</string>
+    <string name="action_edit_label">Edit label</string>
     <string name="action_empty_wallet">Empty wallet</string>
     <string name="action_settings">Settings</string>
     <string name="action_about">About</string>
     <string name="action_restore_wallet">Restore wallet</string>
     <string name="action_refresh_wallet">Refresh</string>
+    <string name="action_exchange_rates">Exchange rates</string>
+    <string name="action_new_address">New address</string>
 
     <!-- Errors -->
+    <string name="error_generic">Error occurred while performing action</string>
     <string name="error_could_not_read_wallet">Could not read wallet</string>
 
     <!-- Generic items -->
@@ -21,6 +25,13 @@
     <string name="button_finish">FINISH</string>
     <string name="button_confirm">CONFIRM</string>
     <string name="button_cancel">CANCEL</string>
+    <string name="button_dismiss">DISMISS</string>
+    <string name="button_delete">DELETE</string>
+    <string name="button_add">ADD</string>
+    <string name="button_save">SAVE</string>
+    <string name="button_set">SET</string>
+    <string name="button_remove">REMOVE</string>
+    <string name="button_edit">EDIT</string>
     <string name="button_send">SEND</string>
     <string name="button_skip">SKIP</string>
     <string name="button_add_coins">+ COINS</string>
@@ -37,38 +48,45 @@
     <string name="create_wallet">Create a new wallet</string>
     <string name="restore_wallet">Restore a wallet</string>
 
-    <!-- Seed fragment -->
-    <string name="seed_info">This is your <i>recovery seed phrase</i>, from it your wallet is generated. Please write it down on a paper and keep it in a secure place, as you would do with paper money. Anyone with access to it has access to the wallet\'s funds.\nIf you lose your seed, we cannot do anything to recover your wallet.</string>
-    <string name="seed_title">your seed</string>
+    <!-- Recovery fragment -->
+    <string name="seed_info">This is your <i>recovery phrase</i>, which is used to generate the keys for your wallet. Please write it down on a paper and keep it in a secure place, as you would do with paper money. Anyone with access to it has access to the wallet\'s funds.\nIf you lose your recovery phrase, your wallet cannot be recovered.</string>
+    <string name="seed_title">your recovery phrase</string>
     <string name="sample_seed">deliver broken make enrich core vendor ski help sock spy purse roast token jewel female</string>
-    <string name="seed_regenerate_title">touch to generate a new seed</string>
-    <string name="backed_up_seed">I have copied and stored my seed in a secure place.</string>
+    <string name="seed_regenerate_title">touch to generate a new recovery phrase</string>
+    <string name="backed_up_seed">I have copied and stored my recovery phrase in a secure place.</string>
 
     <!-- Restore fragment -->
-    <string name="restore_info">Please enter your recovery seed:</string>
-    <string name="restore_seed_protected">My seed is password protected</string>
+    <string name="restore_info">Please enter your recovery phrase:</string>
+    <string name="restore_seed_protected">My recovery phrase is password protected</string>
     <string name="restore_skip_title">Skipping verification</string>
-    <string name="restore_skip_info1">Please make sure that your seed matches the following:</string>
+    <string name="restore_skip_info1">Please make sure that your recovery phrase matches the following:</string>
     <string name="restore_skip_info2">It is recommended not to skip verification, so that any misspellings could be detected.</string>
-    <string name="restore_error_checksum">The seed is not valid. Check if some words are misspelled.</string>
-    <string name="restore_error_words">The seed contains unrecognized words.</string>
-    <string name="restore_error_mismatch">The seed entered does not match your seed.</string>
-    <string name="restore_error">Could not verify your seed. %1$s</string>
+    <string name="restore_error_checksum">Recovery phrase is not valid. Check if some words are misspelled.</string>
+    <string name="restore_error_words">Recovery phrase contains unrecognized words.</string>
+    <string name="restore_error_mismatch">Recovery phrase entered does not match your recovery phrase.</string>
+    <string name="restore_error">Could not verify your recovery phrase. %1$s</string>
     <string name="extra_entropy">Extra entropy</string>
 
     <!-- Balance fragment -->
     <string name="wallet_transactions_coinbase">mined</string>
-    <string name="history_empty">No coins received so far!\n\nYou can get some by trading for traditional money, selling goods or services or earning by working.</string>
+    <string name="history_empty">No coins received so far!\n\nYou can get some through an exchange, trading, and selling goods or services.</string>
     <string name="sent_to">sent to</string>
     <string name="received_with">received with</string>
     <string name="get_tx_info_error">Could not get transaction information</string>
     <string name="disconnected_label">No connection</string>
+    <string name="no_wallet_pocket_selected">No wallet pocket selected</string>
+    <string name="get_tx_broadcast_error">Error broadcasting transaction</string>
 
     <!-- Receive fragment -->
     <string name="receive_address_label">my address</string>
+    <string name="create_new_address">Create a new address?</string>
+    <string name="create_new_address_name">Name (optional)</string>
+    <string name="view_previous_addresses">View previous addresses</string>
+    <string name="too_many_unused_addresses">Too many unused addresses, try to use one of the previous addresses before creating a new one.</string>
 
     <!-- Send fragment -->
     <string name="send_coins_fragment_receiving_address_label">Pay to</string>
+    <string name="send_coins_fragment_receiving_address_tip">type name or address</string>
     <string name="send_coins_fragment_receiving_address_error">Invalid Bitcoin Address!</string>
     <string name="send_coins_fragment_amount_label">Amount to pay</string>
     <string name="send_coins_fragment_button_send">Send</string>
@@ -92,16 +110,16 @@
 
     <!-- Set Password fragment -->
     <string name="set_password_info">Set a password to protect your wallet in everyday use.</string>
-    <string name="set_password_seed_protect">Also protect my seed</string>
-    <string name="set_password_seed_protect_info">The password becomes permanent and it is needed when restoring your wallet with the seed.\nWARNING: If you forget your password it will be impossible to restore your wallet!</string>
+    <string name="set_password_seed_protect">Also protect my recovery phrase</string>
+    <string name="set_password_seed_protect_info">The password becomes permanent and it is needed when restoring your wallet with the recovery phrase.\nWARNING: If you forget your password it will be impossible to restore your wallet!</string>
     <string name="set_password1">Type your password</string>
     <string name="set_password2">Re-type your password</string>
-    <string name="password_too_common_error">Password \"%1$s\" is to common to be safely used.</string>
+    <string name="password_too_common_error">Password \"%1$s\" is too common to be safely used.</string>
     <string name="password_too_short_error">Password is too short, minimum %1$d characters.</string>
     <string name="passwords_mismatch">Passwords don\'t match</string>
     <string name="password_error">Could not proceed, password errors detected.</string>
     <string name="password_skip_warn">By not setting a password, your wallet can be accessed without authorization.</string>
-    <string name="password_wallet_recovery">To restore your wallet, please provide the same password you used when created the protected seed.\nIf you enter a different password a new empty wallet will be created.</string>
+    <string name="password_wallet_recovery">To restore your wallet, please provide the same password you used when created the protected recovery phrase.\nIf you enter a different password a new empty wallet will be created.</string>
 
     <!-- FinalizeWalletRestorationFragment -->
     <string name="wallet_restoration">Please wait while your wallet is being restored</string>
@@ -112,42 +130,69 @@
 
     <!-- SignTransactionFragment -->
     <string name="preparing_transaction">Please wait while your transaction is being prepared and sent.</string>
-    <string name="no_such_pocket_error">Error occurred while accessing this wallet pocket. If problem persists, try to restore the wallet from seed.</string>
+    <string name="no_such_pocket_error">An error occurred while accessing this wallet pocket. If the problem persists try to restore the wallet from the recovery phrase.</string>
     <string name="password_failed">The password entered is not valid.</string>
-    <string name="sent_msg">Sent! Please wait for confirmation.</string>
+    <string name="sending_msg">Sending&#8230;</string>
+    <string name="sent_msg">Sent! Please wait for transaction confirmation.</string>
 
     <!-- About Activity -->
     <string name="title_activity_about">About Coinomi</string>
     <string name="app_name_long">Coinomi for Android</string>
     <string name="about_licence">An open source project\nhttps://github.com/Coinomi/coinomi-android\nSource code licenced under GNU General Public License 3</string>
+    <string name="about_credits_nubits">Server infrastructure donated by NuBits - The World\'s First Stable Digital Currency\nhttps://nubits.com/</string>
     <string name="about_credits_bitcoinj">Uses Bitcoinj library\nhttp://bitcoinj.github.io/</string>
     <string name="about_credits_electrum">Uses Electrum server software\nhttps://electrum.org/</string>
+    <string name="about_credits_schildbach">Influenced by Andreas Schildbach\nhttps://github.com/schildbach/bitcoin-wallet/</string>
     <string name="about_credits_zxing">QR-code functionality by ZXing\nhttps://github.com/zxing/zxing</string>
     <string name="about_credits_crypto_icons">Crypto-icons by Chris Shepherd\nhttps://github.com/shphrd/crypto-icons</string>
     <string name="about_credits_font_icons">Font-icons by Daniel Bruce\nhttp://www.entypo.com</string>
+    <string name="about_credits_exchange_rates">Exchange rates provided by\nhttp://www.cryptocoincharts.info/\nhttps://bitcoinaverage.com/</string>
+    <string name="about_coinomi_copyright">Coinomi 2014&#8211;2015</string>
 
     <!-- Add Coins -->
     <string name="title_activity_add_coins">Add coins</string>
     <string name="password_add_coin">You are about to create a %1$s pocket in your wallet.</string>
     <string name="adding_coin">Please wait while creating a new pocket for %1$s</string>
     <string name="add_coin_error">Error adding %1$s: %2$s</string>
-    <string name="add_coin_accounts_error">Accounts are not yet supported.</string>
-    <string name="title_activity_transaction_details">Transaction details</string>
+    <string name="add_coin_accounts_error">Coin already added. Additional accounts are not yet supported.</string>
 
     <!-- Transaction amount visualizer -->
     <string name="internal_transfer">Internal transfer</string>
 
-    <!-- Transaction Details Fragment -->
+    <!-- Transaction Details -->
+    <string name="title_activity_transaction_details">Transaction details</string>
+    <string name="sent">sent</string>
+    <string name="received">received</string>
     <string name="status_label">status</string>
     <string name="date_label">date</string>
     <string name="transaction_id_label">transaction id</string>
-    <string name="view_at_a_blockchain_explorer_link">View at a blockchain explorer</string>
+    <string name="view_at_a_blockchain_explorer_link">View on blockchain explorer</string>
     <plurals name="status_building">
         <item quantity="one">%d confirmation</item>
         <item quantity="other">%d confirmations</item>
     </plurals>
-    <string name="status_pending">Waiting for a confirmation</string>
+    <string name="status_pending">Waiting for transaction confirmation</string>
     <string name="status_unknown">Transaction status unknown</string>
 
+    <!-- Exchange Rates -->
+    <string name="title_activity_exchange_rates">Exchange rates</string>
+    <string name="set_local_currency">Set %1$s as a local currency</string>
+    <string name="exchange_rates_loading">Loading exchange rates</string>
+    <string name="exchange_rates_load_error">Could not load exchange rates</string>
+    <string name="exchange_rates_empty_search">Could not find exchange rate</string>
+
+    <!-- Select Coins -->
+    <string name="select_coins">Select the coins you wish to use with your wallet. You can add more later.</string>
+
+    <!-- Previous Addresses -->
+    <string name="title_activity_previous_addresses">My previous addresses</string>
+    <string name="previous_addresses_used">Used address</string>
+    <string name="previous_addresses_unused">Unused address</string>
+
+    <!-- Edit Address Book Entry -->
+    <string name="edit_address_book_entry_dialog_title_add">Add address</string>
+    <string name="edit_address_book_entry_dialog_title_edit">Edit address</string>
+    <string name="edit_address_book_entry_dialog_address_label">Address</string>
+    <string name="edit_address_book_entry_dialog_label_label">Name</string>
 
 </resources>

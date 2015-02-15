@@ -8,22 +8,24 @@ import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Typeface;
 import android.os.StrictMode;
+import android.os.SystemClock;
 import android.preference.PreferenceManager;
 import android.widget.Toast;
 
+import com.coinomi.core.coins.CoinType;
 import com.coinomi.core.wallet.Wallet;
 import com.coinomi.core.wallet.WalletPocket;
-import com.coinomi.core.coins.CoinType;
 import com.coinomi.core.wallet.WalletProtobufSerializer;
 import com.coinomi.wallet.service.CoinService;
 import com.coinomi.wallet.service.CoinServiceImpl;
-import com.coinomi.wallet.util.CrashReporter;
 import com.coinomi.wallet.util.Fonts;
 import com.coinomi.wallet.util.LinuxSecureRandom;
+
+import org.acra.ACRA;
+import org.acra.annotation.ReportsCrashes;
+import org.acra.sender.HttpSender;
 import org.bitcoinj.crypto.MnemonicCode;
 import org.bitcoinj.store.UnreadableWalletException;
-import org.bitcoinj.utils.Threading;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,20 +37,18 @@ import java.util.HashMap;
 
 import javax.annotation.Nullable;
 
-//import ch.qos.logback.classic.Level;
-//import ch.qos.logback.classic.LoggerContext;
-//import ch.qos.logback.classic.android.LogcatAppender;
-//import ch.qos.logback.classic.encoder.PatternLayoutEncoder;
-//import ch.qos.logback.classic.spi.ILoggingEvent;
-//import ch.qos.logback.core.rolling.RollingFileAppender;
-//import ch.qos.logback.core.rolling.TimeBasedRollingPolicy;
-
 /**
- * @author Giannis Dzegoutanis
+ * @author John L. Jegutanis
  * @author Andreas Schildbach
  */
+@ReportsCrashes(
+        httpMethod = HttpSender.Method.PUT,
+        reportType = HttpSender.Type.JSON,
+        formKey = ""
+)
 public class WalletApplication extends Application {
     private static HashMap<String, Typeface> typefaces;
+    private static String httpUserAgent;
     private Configuration config;
     private ActivityManager activityManager;
 
@@ -59,6 +59,8 @@ public class WalletApplication extends Application {
     private File walletFile;
     @Nullable private Wallet wallet;
     private PackageInfo packageInfo;
+
+    private long lastStop;
 
     private static final Logger log = LoggerFactory.getLogger(WalletApplication.class);
 
@@ -74,18 +76,9 @@ public class WalletApplication extends Application {
 
         packageInfo = packageInfoFromContext(this);
 
-        CrashReporter.init(getCacheDir());
+        httpUserAgent = "Coinomi/" + packageInfo.versionName + " (Android)";
 
-        // TODO does it work?
-        Threading.uncaughtExceptionHandler = new Thread.UncaughtExceptionHandler()
-        {
-            @Override
-            public void uncaughtException(final Thread thread, final Throwable throwable)
-            {
-                log.info("coinomi uncaught exception", throwable);
-                CrashReporter.saveBackgroundTrace(throwable, packageInfo);
-            }
-        };
+//        ACRA.init(this);
 
         config = new Configuration(PreferenceManager.getDefaultSharedPreferences(this));
         activityManager = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
@@ -177,9 +170,12 @@ public class WalletApplication extends Application {
     }
 
 
-    public Configuration getConfiguration()
-    {
+    public Configuration getConfiguration() {
         return config;
+    }
+
+    public static String httpUserAgent() {
+        return httpUserAgent;
     }
 
     /**
@@ -210,83 +206,43 @@ public class WalletApplication extends Application {
     }
 
     public void setWallet(Wallet wallet) {
+        // Disable auto-save of the previous wallet if exists, so it doesn't override the new one
+        if (this.wallet != null) {
+            this.wallet.shutdownAutosaveAndWait();
+        }
+
         this.wallet = wallet;
         this.wallet.autosaveToFile(walletFile,
                 Constants.WALLET_WRITE_DELAY, Constants.WALLET_WRITE_DELAY_UNIT, null);
     }
 
     private void loadWallet() {
-        if (walletFile.exists())
-        {
+        if (walletFile.exists()) {
             final long start = System.currentTimeMillis();
 
             FileInputStream walletStream = null;
 
-            try
-            {
+            try {
                 walletStream = new FileInputStream(walletFile);
 
                 setWallet(WalletProtobufSerializer.readWallet(walletStream));
 
                 log.info("wallet loaded from: '" + walletFile + "', took " + (System.currentTimeMillis() - start) + "ms");
-            }
-            catch (final FileNotFoundException x)
-            {
+            } catch (final FileNotFoundException x) {
                 log.error("problem loading wallet", x);
                 Toast.makeText(WalletApplication.this, R.string.error_could_not_read_wallet, Toast.LENGTH_LONG).show();
-            }
-            catch (final UnreadableWalletException x)
-            {
+            } catch (final UnreadableWalletException x) {
                 log.error("problem loading wallet", x);
 
                 Toast.makeText(WalletApplication.this, R.string.error_could_not_read_wallet, Toast.LENGTH_LONG).show();
-            }
-            finally
-            {
-                if (walletStream != null)
-                {
-                    try
-                    {
+            } finally {
+                if (walletStream != null) {
+                    try {
                         walletStream.close();
-                    }
-                    catch (final IOException x)
-                    {
-                        // swallow
-                    }
+                    } catch (final IOException x) { /* ignore */ }
                 }
             }
-
-//            if (!wallet.isConsistent())
-//            {
-//                Toast.makeText(this, "inconsistent wallet: " + walletFile, Toast.LENGTH_LONG).show();
-//
-//                wallet = restoreWalletFromBackup();
-//            }
-//
-//            if (!wallet.getParams().equals(Constants.NETWORK_PARAMETERS))
-//                throw new Error("bad wallet network parameters: " + wallet.getParams().getId());
         }
-        // ELSE create a wallet later
-//        else
-//        {
-//            // TODO handle exceptions
-//            try {
-//                log.info("Creating a new wallet from mnemonic");
-//                wallet = new Wallet(Constants.TEST_MNEMONIC);
-//                log.info("Adding coin pockets for some coins");
-//                wallet.createCoinPockets(Constants.COINS_TEST);
-//            } catch (MnemonicException e) {
-//                e.printStackTrace();
-//            }
-//
-//            log.info("new wallet created");
-//        }
-
-        // TODO check if needed
-        // this check is needed so encrypted wallets won't get their private keys removed accidently
-//        for (final ECKey key : wallet.getKeys())
-//            if (key.getPrivKeyBytes() == null)
-//                throw new Error("found read-only key, but wallet is likely an encrypted wallet from the future");
     }
 
 
@@ -339,5 +295,17 @@ public class WalletApplication extends Application {
     public PackageInfo packageInfo()
     {
         return packageInfo;
+    }
+
+    public void touchLastResume() {
+        lastStop = -1;
+    }
+
+    public void touchLastStop() {
+        lastStop = SystemClock.elapsedRealtime();
+    }
+
+    public long getLastStop() {
+        return lastStop;
     }
 }

@@ -33,7 +33,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static org.junit.Assert.*;
 
 /**
- * @author Giannis Dzegoutanis
+ * @author John L. Jegutanis
  */
 public class SimpleHDKeyChainTest {
 
@@ -95,6 +95,12 @@ public class SimpleHDKeyChainTest {
         ECKey key4 = chain.getKey(SimpleHDKeyChain.KeyPurpose.CHANGE);
         assertEquals("1861TX2MbyPEUrxDQVWgV4Tp9991bK1zpy", key4.toAddress(BitcoinMain.get()).toString());
         key4.sign(Sha256Hash.ZERO_HASH);
+    }
+
+    @Test
+    public void externalKeyCheck() {
+        assertFalse(chain.isExternal(chain.getKey(KeyChain.KeyPurpose.CHANGE)));
+        assertTrue(chain.isExternal(chain.getKey(KeyChain.KeyPurpose.RECEIVE_FUNDS)));
     }
 
     @Test

@@ -8,7 +8,7 @@ import org.bitcoinj.core.Transaction;
 import java.util.List;
 
 /**
- * @author Giannis Dzegoutanis
+ * @author John L. Jegutanis
  */
 public interface TransactionEventListener {
     void onNewBlock(BlockHeader header);
@@ -23,5 +23,5 @@ public interface TransactionEventListener {
 
     void onTransactionBroadcast(Transaction transaction);
 
-    void onTransactionBroadcastError(Transaction tx, Throwable throwable);
+    void onTransactionBroadcastError(Transaction tx);
 }

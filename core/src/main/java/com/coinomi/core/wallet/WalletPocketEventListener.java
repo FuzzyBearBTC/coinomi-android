@@ -4,7 +4,7 @@ import org.bitcoinj.core.*;
 import org.bitcoinj.core.Wallet;
 
 /**
- * @author Giannis Dzegoutanis
+ * @author John L. Jegutanis
  */
 public interface WalletPocketEventListener {
 
@@ -13,6 +13,10 @@ public interface WalletPocketEventListener {
     void onNewBlock(WalletPocket pocket);
 
     void onTransactionConfidenceChanged(WalletPocket pocket, Transaction tx);
+
+    void onTransactionBroadcastFailure(WalletPocket pocket, Transaction tx);
+
+    void onTransactionBroadcastSuccess(WalletPocket pocket, Transaction tx);
 
     void onPocketChanged(final WalletPocket pocket);
 

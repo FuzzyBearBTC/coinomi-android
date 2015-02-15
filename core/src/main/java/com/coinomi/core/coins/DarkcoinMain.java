@@ -3,14 +3,14 @@ package com.coinomi.core.coins;
 import org.bitcoinj.core.Coin;
 
 /**
- * @author Giannis Dzegoutanis
+ * @author John L. Jegutanis
  */
 public class DarkcoinMain extends CoinType {
     private DarkcoinMain() {
         id = "darkcoin.main";
 
         addressHeader = 76;
-        p2shHeader = 5;
+        p2shHeader = 16;
         acceptableAddressCodes = new int[] { addressHeader, p2shHeader };
         spendableCoinbaseDepth = 100;
 
